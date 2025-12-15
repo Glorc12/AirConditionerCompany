@@ -1,4 +1,5 @@
 from database import db
+from werkzeug.security import generate_password_hash
 
 
 class UserService:
@@ -68,12 +69,15 @@ class UserService:
             if len(password) < 3:
                 return {'error': 'Password must be at least 3 characters long'}
 
+            # Хешировать пароль для безопасности
+            hashed_password = generate_password_hash(password)
+
             # Создание нового пользователя
             new_user = User(
                 full_name=full_name,
                 phone=phone,
                 login=login,
-                password=password,
+                password=hashed_password,  # Используем хешированный пароль
                 user_type=user_type
             )
 
