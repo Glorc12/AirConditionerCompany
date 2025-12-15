@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🛠️ Climate Tech - Система учета заявок</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+
+<!-- СТРАНИЦА ЛОГИНА -->
+<div id="loginPage" class="page active">
+    <div class="login-container">
+        <div class="login-box">
+            <h1>🛠️ Climate Tech</h1>
+            <p class="subtitle">Система учета заявок на ремонт</p>
+
+            <div id="loginAlert" class="alert alert-error"></div>
+
+            <form id="loginForm" class="login-form">
+                <div class="form-group">
+                    <label for="loginInput" class="form-label">Логин</label>
+                    <input
+                        type="text"
+                        id="loginInput"
+                        class="form-control"
+                        placeholder="Введите логин"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="passwordInput" class="form-label">Пароль</label>
+                    <input
+                        type="password"
+                        id="passwordInput"
+                        class="form-control"
+                        placeholder="Введите пароль"
+                        required
+                    >
+                </div>
+
+                <button type="submit" class="btn btn--primary btn--full-width">Вход</button>
+            </form>
+
+            <div class="test-credentials">
+                <p><strong>🧪 Тестовые учетные данные:</strong></p>
+                <ul>
+                    <li><code>login1 / pass1</code> - Менеджер</li>
+                    <li><code>login2 / pass2</code> - Специалист</li>
+                    <li><code>login4 / pass4</code> - Оператор</li>
+                    <li><code>login6 / pass6</code> - Заказчик</li>
+                    <li><code>login11 / pass11</code> - Менеджер по качеству ⭐</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ГЛАВНАЯ СТРАНИЦА ПРИЛОЖЕНИЯ -->
+<div id="appPage" class="page">
+    <div class="app-container">
+        <!-- БОКОВОЕ МЕНЮ -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>🛠️ Climate Tech</h2>
+                <div class="user-info">
+                    <p id="userName" class="user-name">-</p>
+                    <p id="userRole" class="user-role">-</p>
+                </div>
+            </div>
+
+            <nav class="sidebar-menu">
+                <button class="nav-tab active" onclick="switchTab('dashboard')">
+                    📊 Панель управления
+                </button>
+                <button class="nav-tab" onclick="switchTab('requests')">
+                    📋 Заявки
+                </button>
+                <button class="nav-tab" id="statisticsTab" onclick="switchTab('statistics')">
+                    📈 Статистика
+                </button>
+                <button class="nav-tab" id="usersTab" onclick="switchTab('users')">
+                    👥 Пользователи
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <button class="btn btn--secondary btn--full-width" onclick="logout()">
+                    🚪 Выход
+                </button>
+            </div>
+        </aside>
+
+        <!-- ОСНОВНОЙ КОНТЕНТ -->
+        <main class="content">
+            <!-- ПАНЕЛЬ УПРАВЛЕНИЯ -->
+            <section id="dashboard" class="page active">
+                <div class="page-header">
+                    <h1>📊 Панель управления</h1>
+                    <p>Добро пожаловать в систему управления заявками</p>
+                </div>
+
+                <div id="dashboardStats" class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">-</div>
+                        <div class="stat-label">Загрузка...</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ЗАЯВКИ -->
+            <section id="requests" class="page">
+                <div class="page-header">
+                    <h1>📋 Список заявок</h1>
+                </div>
+
+                <div class="filters">
+                    <div class="filter-group">
+                        <label>Фильтр по статусу</label>
+                        <select id="statusFilter" class="form-control">
+                            <option value="">Все статусы</option>
+                            <option value="Новая заявка">Новая заявка</option>
+                            <option value="В процессе ремонта">В процессе ремонта</option>
+                            <option value="Ожидание комплектующих">Ожидание комплектующих</option>
+                            <option value="Готова к выдаче">Готова к выдаче</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="requestsAlert" class="alert"></div>
+
+                <div id="requestsContainer" class="requests-list">
+                    <p>Загрузка заявок...</p>
+                </div>
+
+                <div id="newRequestSection" class="new-request-section">
+                    <h2>➕ Создать новую заявку</h2>
+
+                    <form id="newRequestForm" class="form">
+                        <div class="form-group">
+                            <label for="requestType" class="form-label">Тип оборудования</label>
+                            <input
+                                type="text"
+                                id="requestType"
+                                class="form-control"
+                                placeholder="Например: Кондиционер, Обогреватель"
+                                required
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="requestModel" class="form-label">Модель устройства</label>
+                            <input
+                                type="text"
+                                id="requestModel"
+                                class="form-control"
+                                placeholder="Например: LG AC-123"
+                                required
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="requestProblem" class="form-label">Описание проблемы</label>
+                            <textarea
+                                id="requestProblem"
+                                class="form-control"
+                                rows="4"
+                                placeholder="Опишите проблему подробнее..."
+                                required
+                            ></textarea>
+                        </div>
+
+                        <button type="submit" class="btn btn--primary">✅ Создать заявку</button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- СТАТИСТИКА -->
+            <section id="statistics" class="page">
+                <div class="page-header">
+                    <h1>📈 Статистика</h1>
+                    <p>Анализ выполненных работ</p>
+                </div>
+
+                <div id="statisticsContainer" class="statistics-table">
+                    <p>Загрузка статистики...</p>
+                </div>
+            </section>
+
+            <!-- УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ -->
+            <section id="users" class="page">
+                <div class="page-header">
+                    <h1>👥 Управление пользователями</h1>
+                </div>
+
+                <div id="userAlert" class="alert"></div>
+
+                <div id="usersContainer" class="users-list">
+                    <p>Загрузка пользователей...</p>
+                </div>
+
+                <div id="addUserSection" class="add-user-section">
+                    <h2>➕ Добавить нового пользователя</h2>
+
+                    <form id="addUserForm" class="form">
+                        <div class="form-group">
+                            <label for="newUserName" class="form-label">ФИО</label>
+                            <input
+                                type="text"
+                                id="newUserName"
+                                class="form-control"
+                                placeholder="Полное имя"
+                                required
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="newUserPhone" class="form-label">Номер телефона</label>
+                            <input
+                                type="tel"
+                                id="newUserPhone"
+                                class="form-control"
+                                placeholder="8-999-999-99-99"
+                                required
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="newUserLogin" class="form-label">Логин</label>
+                            <input
+                                type="text"
+                                id="newUserLogin"
+                                class="form-control"
+                                placeholder="Уникальный логин"
+                                required
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="newUserPassword" class="form-label">Пароль</label>
+                            <input
+                                type="password"
+                                id="newUserPassword"
+                                class="form-control"
+                                placeholder="Пароль"
+                                required
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="newUserType" class="form-label">Роль</label>
+                            <select id="newUserType" class="form-control" required>
+                                <option value="">-- Выберите роль --</option>
+                                <option value="Менеджер">Менеджер</option>
+                                <option value="Специалист">Специалист</option>
+                                <option value="Оператор">Оператор</option>
+                                <option value="Менеджер по качеству">Менеджер по качеству</option>
+                                <option value="Заказчик">Заказчик</option>
+                            </select>
+                        </div>
+
+                        <button type="submit" class="btn btn--primary">➕ Добавить пользователя</button>
+                    </form>
+                </div>
+            </section>
+        </main>
+    </div>
+</div>
+
+<script src="/js/app.js"></script>
+
+</body>
+</html>
