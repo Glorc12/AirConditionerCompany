@@ -1,706 +1,765 @@
-const API_URL = 'http://192.168.0.21:5000/api';
-let token = localStorage.getItem('token');
-let currentUser = null;
+/* Minimal single-file app: in-memory + localStorage.
+   Optional API integration: set API_BASE to your backend if needed. */
 
-// КОНФИГУРАЦИЯ РОЛЕЙ И РАЗРЕШЕНИЙ
-const ROLE_PERMISSIONS = {
-    'Менеджер': {
-        canViewUsers: true,
-        canAddUsers: true,
-        canDeleteUsers: true,
-        canViewRequests: true,
-        canEditRequests: true,
-        canDeleteRequests: true,
-        canViewStatistics: true,
-        canCreateRequest: true
-    },
-    'Специалист': {
-        canViewUsers: false,
-        canAddUsers: false,
-        canDeleteUsers: false,
-        canViewRequests: true,
-        canEditRequests: true,
-        canDeleteRequests: false,
-        canViewStatistics: false,
-        canCreateRequest: true
-    },
-    'Оператор': {
-        canViewUsers: false,
-        canAddUsers: false,
-        canDeleteUsers: false,
-        canViewRequests: true,
-        canEditRequests: false,
-        canDeleteRequests: false,
-        canViewStatistics: false,
-        canCreateRequest: true
-    },
-    'Заказчик': {
-        canViewUsers: false,
-        canAddUsers: false,
-        canDeleteUsers: false,
-        canViewRequests: true,
-        canEditRequests: false,
-        canDeleteRequests: false,
-        canViewStatistics: true,
-        canCreateRequest: true
-    },
-    'Менеджер по качеству': {
-        canViewUsers: false,
-        canAddUsers: false,
-        canDeleteUsers: false,
-        canViewRequests: true,
-        canEditRequests: true,
-        canDeleteRequests: false,
-        canViewStatistics: true,
-        canCreateRequest: true,
-        canExtendRequests: true,
-        canAssignSpecialists: true
-    }
+const API_BASE = ""; // пример: "http://127.0.0.1:5000/api"
+
+const FEEDBACK_FORM_URL =
+  "https://docs.google.com/forms/d/e/1FAIpQLSdhZcExx6LSIXxk0ub55mSu-WIh23WYdGG9HY5EZhLDo7P8eA/viewform?usp=sf_link";
+
+const LS_KEYS = {
+  requests: "rr_requests_v1",
+  auth: "rr_auth_v1"
 };
 
-// ===== ИНИЦИАЛИЗАЦИЯ =====
-document.addEventListener('DOMContentLoaded', function() {
-    if (token) {
-        showAppPage();
-        loadUserInfo();
-        loadDashboard();
-        setupUIByRole();
-    } else {
-        showLoginPage();
-    }
-    setupEventListeners();
-});
+const ROLES = {
+  admin: "Администратор",
+  operator: "Оператор",
+  specialist: "Специалист",
+  manager: "Менеджер по качеству"
+};
 
-// ===== СЛУШАТЕЛИ СОБЫТИЙ =====
-function setupEventListeners() {
-    const loginForm = document.getElementById('loginForm');
-    if (loginForm) {
-        loginForm.addEventListener('submit', handleLogin);
-    }
+const STATUS = {
+  open: "Открыта",
+  in_progress: "В ремонте",
+  waiting_parts: "Ожидание комплектующих",
+  done: "Завершена"
+};
 
-    const newRequestForm = document.getElementById('newRequestForm');
-    if (newRequestForm) {
-        newRequestForm.addEventListener('submit', handleNewRequest);
-    }
+const STATUS_BADGE = {
+  open: "badge--info",
+  in_progress: "badge--warn",
+  waiting_parts: "badge--warn",
+  done: "badge--ok"
+};
 
-    const addUserForm = document.getElementById('addUserForm');
-    if (addUserForm) {
-        addUserForm.addEventListener('submit', handleAddUser);
-    }
+const demoUsers = [
+  { username: "admin", password: "admin", name: "Администратор", role: "admin" },
+  { username: "operator", password: "operator", name: "Оператор", role: "operator" },
+  { username: "specialist", password: "specialist", name: "Специалист", role: "specialist" },
+  { username: "manager", password: "manager", name: "Менеджер", role: "manager" }
+];
 
-    const statusFilter = document.getElementById('statusFilter');
-    if (statusFilter) {
-        statusFilter.addEventListener('change', loadRequests);
-    }
+const state = {
+  user: null,
+  requests: [],
+  activeTab: "requests",
+  selectedRequestId: null
+};
+
+function uuidv4() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+  // fallback UUIDv4 через getRandomValues
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => {
+    const r = crypto.getRandomValues(new Uint8Array(1))[0];
+    return (Number(c) ^ (r & (15 >> (Number(c) / 4)))).toString(16);
+  });
 }
 
-// ===== АУТЕНТИФИКАЦИЯ =====
-async function handleLogin(e) {
-    e.preventDefault();
-    const login = document.getElementById('loginInput').value;
-    const password = document.getElementById('passwordInput').value;
 
-    try {
-        const response = await fetch(`${API_URL}/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ login, password })
-        });
+const $ = (sel) => document.querySelector(sel);
 
-        const data = await response.json();
+function nowLocalInputValue() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const mm = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mi = pad(d.getMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
 
-        if (response.ok) {
-            token = data.access_token;
-            localStorage.setItem('token', token);
-            currentUser = {
-                user_id: data.user_id,
-                login: data.login,
-                full_name: data.full_name,
-                user_type: data.user_type
-            };
-            showAlert('loginAlert', '✅ Успешный вход!', 'success');
-            setTimeout(() => {
-                showAppPage();
-                loadUserInfo();
-                loadDashboard();
-                setupUIByRole();
-                document.getElementById('loginForm').reset();
-            }, 500);
-        } else {
-            showAlert('loginAlert', '❌ Неверный логин или пароль', 'error');
-        }
-    } catch (error) {
-        showAlert('loginAlert', '❌ Ошибка подключения к серверу', 'error');
-        console.error('Login error:', error);
+function toISOFromLocalInput(v) {
+  if (!v) return null;
+  const dt = new Date(v);
+  return isNaN(dt.getTime()) ? null : dt.toISOString();
+}
+
+function toLocalInputFromISO(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const mm = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mi = pad(d.getMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
+
+function formatDateTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleString("ru-RU");
+}
+
+function showToast(text) {
+  const t = $("#toast");
+  t.textContent = text;
+  t.hidden = false;
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => (t.hidden = true), 2600);
+}
+
+function saveRequests() {
+  localStorage.setItem(LS_KEYS.requests, JSON.stringify(state.requests));
+}
+
+function loadRequests() {
+  const raw = localStorage.getItem(LS_KEYS.requests);
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAuth() {
+  localStorage.setItem(LS_KEYS.auth, JSON.stringify({ user: state.user }));
+}
+
+function loadAuth() {
+  const raw = localStorage.getItem(LS_KEYS.auth);
+  if (!raw) return null;
+  try {
+    const obj = JSON.parse(raw);
+    return obj?.user ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function apiFetch(path, options = {}) {
+  if (!API_BASE) throw new Error("API disabled");
+  const url = API_BASE.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
     }
+  });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "");
+    throw new Error(msg || `HTTP ${res.status}`);
+  }
+  return res.json().catch(() => ({}));
+}
+
+function seedIfEmpty() {
+  if (state.requests.length > 0) return;
+  const base = [
+    {
+      id: 1001,
+      created_at: new Date().toISOString(),
+      equipment_type: "Кондиционер",
+      model: "Daikin FTXF",
+      problem: "Не охлаждает, слышен шум",
+      customer_name: "Иванов Иван",
+      phone: "+7 900 000-00-00",
+      status: "open",
+      assignee: "",
+      deadline: "",
+      completed_at: null,
+      fault_type: "Плохое охлаждение",
+      comments: []
+    },
+    {
+      id: 1002,
+      created_at: new Date(Date.now() - 36 * 3600_000).toISOString(),
+      equipment_type: "Вентиляция",
+      model: "Systemair VTR",
+      problem: "Ошибка датчика, периодически отключается",
+      customer_name: "Петров Петр",
+      phone: "+7 901 111-11-11",
+      status: "in_progress",
+      assignee: "Сидоров С.С.",
+      deadline: "",
+      completed_at: null,
+      fault_type: "Электрика",
+      comments: [
+        {
+          id: uuidv4(),
+          author: "Сидоров С.С.",
+          created_at: new Date().toISOString(),
+          text: "Начата диагностика, требуется уточнить номер платы."
+        }
+      ]
+    }
+  ];
+  state.requests = base;
+  saveRequests();
+}
+
+function setUser(user) {
+  state.user = user;
+  saveAuth();
+  renderAuth();
+  renderAll();
 }
 
 function logout() {
-    if (confirm('Вы уверены, что хотите выйти?')) {
-        localStorage.removeItem('token');
-        token = null;
-        currentUser = null;
-        showLoginPage();
-        document.getElementById('loginForm').reset();
-    }
+  state.user = null;
+  localStorage.removeItem(LS_KEYS.auth);
+  renderAuth();
+  showToast("Вы вышли из системы");
 }
 
-// ===== УПРАВЛЕНИЕ ИНТЕРФЕЙСОМ ПО РОЛЯМ =====
-function setupUIByRole() {
-    if (!currentUser) return;
-
-    const permissions = ROLE_PERMISSIONS[currentUser.user_type];
-
-    const statisticsTab = document.getElementById('statisticsTab');
-    const usersTab = document.getElementById('usersTab');
-    const newRequestSection = document.getElementById('newRequestSection');
-    const addUserSection = document.getElementById('addUserSection');
-
-    if (statisticsTab) {
-        statisticsTab.style.display = permissions.canViewStatistics ? 'block' : 'none';
-    }
-
-    if (usersTab) {
-        usersTab.style.display = permissions.canViewUsers ? 'block' : 'none';
-    }
-
-    if (newRequestSection) {
-        newRequestSection.style.display = permissions.canCreateRequest ? 'block' : 'none';
-    }
-
-    if (addUserSection) {
-        addUserSection.style.display = permissions.canAddUsers ? 'block' : 'none';
-    }
-
-    updateActionButtons();
+function roleTitle(role) {
+  return ROLES[role] || role || "—";
 }
 
-function updateActionButtons() {
-    if (!currentUser) return;
+function renderAuth() {
+  const loggedIn = !!state.user;
+  $("#loginView").hidden = loggedIn;
+  $("#appView").hidden = !loggedIn;
+  $("#userbar").hidden = !loggedIn;
 
-    const permissions = ROLE_PERMISSIONS[currentUser.user_type];
-
-    document.querySelectorAll('.delete-request-btn').forEach(btn => {
-        btn.style.display = permissions.canDeleteRequests ? 'inline-block' : 'none';
-    });
-
-    document.querySelectorAll('.delete-user-btn').forEach(btn => {
-        btn.style.display = permissions.canDeleteUsers ? 'inline-block' : 'none';
-    });
-
-    document.querySelectorAll('.edit-request-btn').forEach(btn => {
-        btn.style.display = permissions.canEditRequests ? 'inline-block' : 'none';
-    });
+  if (loggedIn) {
+    $("#userName").textContent = state.user.name;
+    $("#userRole").textContent = roleTitle(state.user.role);
+    $("#managerTools").hidden = state.user.role !== "manager" && state.user.role !== "admin";
+  }
 }
 
-// ===== НАВИГАЦИЯ =====
-function switchTab(tabName) {
-    document.querySelectorAll('.nav-tab').forEach(tab => {
-        tab.classList.remove('active');
-    });
-    event.target.classList.add('active');
-
-    document.querySelectorAll('.content .page').forEach(page => {
-        page.classList.remove('active');
-    });
-
-    const page = document.getElementById(tabName);
-    if (page) {
-        page.classList.add('active');
-    }
-
-    if (tabName === 'requests') loadRequests();
-    if (tabName === 'statistics') loadStatistics();
-    if (tabName === 'users') loadUsers();
+function setActiveTab(tab) {
+  state.activeTab = tab;
+  document.querySelectorAll(".tab").forEach((b) => {
+    b.classList.toggle("is-active", b.dataset.tab === tab);
+  });
+  $("#tab-requests").hidden = tab !== "requests";
+  $("#tab-stats").hidden = tab !== "stats";
+  $("#tab-quality").hidden = tab !== "quality";
 }
 
-function showLoginPage() {
-    document.getElementById('loginPage').classList.add('active');
-    document.getElementById('appPage').classList.remove('active');
+function statusBadge(status) {
+  const cls = STATUS_BADGE[status] || "badge--info";
+  const label = STATUS[status] || status;
+  return `<span class="badge ${cls}">${escapeHtml(label)}</span>`;
 }
 
-function showAppPage() {
-    document.getElementById('appPage').classList.add('active');
-    document.getElementById('loginPage').classList.remove('active');
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
-// ===== ЗАГРУЗКА ИНФОРМАЦИИ ПОЛЬЗОВАТЕЛЯ =====
-function loadUserInfo() {
-    try {
-        if (currentUser) {
-            const userNameEl = document.getElementById('userName');
-            const userRoleEl = document.getElementById('userRole');
+function filteredRequests() {
+  const q = ($("#searchInput").value || "").trim().toLowerCase();
+  const st = $("#statusFilter").value;
+  const ass = ($("#assigneeFilter").value || "").trim().toLowerCase();
 
-            if (userNameEl) userNameEl.textContent = currentUser.full_name;
-            if (userRoleEl) userRoleEl.textContent = currentUser.user_type;
-        }
-    } catch (error) {
-        console.error('Ошибка загрузки информации:', error);
-    }
+  return state.requests.filter((r) => {
+    const matchesQ =
+      !q ||
+      String(r.id).includes(q) ||
+      (r.customer_name || "").toLowerCase().includes(q) ||
+      (r.phone || "").toLowerCase().includes(q) ||
+      (r.model || "").toLowerCase().includes(q);
+
+    const matchesStatus = !st || r.status === st;
+    const matchesAssignee = !ass || (r.assignee || "").toLowerCase().includes(ass);
+
+    return matchesQ && matchesStatus && matchesAssignee;
+  });
 }
 
-// ===== ПАНЕЛЬ УПРАВЛЕНИЯ =====
-async function loadDashboard() {
-    try {
-        if (!currentUser) return;
-
-        const permissions = ROLE_PERMISSIONS[currentUser.user_type];
-        const dashboardStats = document.getElementById('dashboardStats');
-
-        if (!dashboardStats) return;
-
-        if (!permissions.canViewStatistics) {
-            dashboardStats.innerHTML = '<p>Нет доступа к статистике</p>';
-            return;
-        }
-
-        const requestsResp = await fetch(`${API_URL}/requests/?page=1&limit=100`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (!requestsResp.ok) {
-            dashboardStats.innerHTML = '<p>Ошибка загрузки данных</p>';
-            return;
-        }
-
-        const requests = await requestsResp.json();
-
-        if (!requests.data || requests.data.length === 0) {
-            dashboardStats.innerHTML = '<p>Нет данных для отображения</p>';
-            return;
-        }
-
-        let filteredRequests = requests.data;
-
-        if (currentUser.user_type === 'Заказчик') {
-            filteredRequests = requests.data.filter(r => r.client_id === currentUser.user_id);
-        }
-
-        const completed = filteredRequests.filter(r => r.request_status === 'Готова к выдаче').length || 0;
-        const inProgress = filteredRequests.filter(r => r.request_status === 'В процессе ремонта').length || 0;
-        const newRequests = filteredRequests.filter(r => r.request_status === 'Новая заявка').length || 0;
-        const total = filteredRequests.length || 0;
-
-        dashboardStats.innerHTML = `
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-value">${total}</div>
-                    <div class="stat-label">Всего заявок</div>
-                </div>
-                <div class="stat-card variant-2">
-                    <div class="stat-value">${newRequests}</div>
-                    <div class="stat-label">Новых</div>
-                </div>
-                <div class="stat-card variant-3">
-                    <div class="stat-value">${inProgress}</div>
-                    <div class="stat-label">В процессе</div>
-                </div>
-                <div class="stat-card variant-4">
-                    <div class="stat-value">${completed}</div>
-                    <div class="stat-label">Завершено</div>
-                </div>
+function renderRequestsTable() {
+  const tbody = $("#requestsTbody");
+  const rows = filteredRequests()
+    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
+    .map((r) => {
+      return `
+        <tr>
+          <td><span class="badge">${escapeHtml(r.id)}</span></td>
+          <td>${escapeHtml(formatDateTime(r.created_at))}</td>
+          <td>${escapeHtml(r.equipment_type)}</td>
+          <td>${escapeHtml(r.model)}</td>
+          <td>${escapeHtml(r.customer_name)}</td>
+          <td><span class="badge">${escapeHtml(r.phone)}</span></td>
+          <td>${statusBadge(r.status)}</td>
+          <td>${escapeHtml(r.assignee || "—")}</td>
+          <td>
+            <div class="rowActions">
+              <button class="btn btn--ghost" data-action="open" data-id="${r.id}" type="button">Открыть</button>
+              <button class="btn" data-action="status" data-id="${r.id}" type="button">Сменить статус</button>
             </div>
-        `;
-    } catch (error) {
-        console.error('Dashboard error:', error);
-    }
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  tbody.innerHTML = rows || "";
+  $("#requestsEmpty").hidden = filteredRequests().length !== 0;
 }
 
-// ===== ЗАГРУЗКА ЗАЯВОК =====
-async function loadRequests() {
-    try {
-        if (!currentUser) return;
-
-        const requestsContainer = document.getElementById('requestsContainer');
-        if (!requestsContainer) return;
-
-        const statusFilter = document.getElementById('statusFilter')?.value || '';
-
-        const response = await fetch(`${API_URL}/requests/?page=1&limit=20`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (!response.ok) {
-            requestsContainer.innerHTML = '<p>Ошибка загрузки заявок</p>';
-            return;
-        }
-
-        const data = await response.json();
-
-        if (!data.data || data.data.length === 0) {
-            requestsContainer.innerHTML = '<p>Заявок не найдено</p>';
-            return;
-        }
-
-        let requests = data.data;
-
-        if (statusFilter) {
-            requests = requests.filter(r => r.request_status === statusFilter);
-        }
-
-        if (currentUser.user_type === 'Заказчик') {
-            requests = requests.filter(r => r.client_id === currentUser.user_id);
-        }
-
-        const permissions = ROLE_PERMISSIONS[currentUser.user_type];
-
-        let html = '<table><thead><tr><th>Дата</th><th>Клиент</th><th>Тип</th><th>Модель</th><th>Статус</th><th>Мастер</th><th>Действия</th></tr></thead><tbody>';
-
-        requests.forEach(request => {
-            const date = new Date(request.start_date).toLocaleDateString('ru-RU');
-            let actions = '';
-
-            if (permissions.canEditRequests) {
-                actions += `<button class="btn btn--sm edit-request-btn" onclick="editRequest(${request.request_id})">✏️</button> `;
-            }
-
-            if (permissions.canDeleteRequests) {
-                actions += `<button class="btn btn--sm delete-request-btn" onclick="deleteRequest(${request.request_id})">🗑️</button>`;
-            }
-
-            html += `<tr>
-                <td>${date}</td>
-                <td>${request.client_id || 'Неизвестно'}</td>
-                <td>${request.climate_tech_type || '-'}</td>
-                <td>${request.climate_tech_model || '-'}</td>
-                <td><span class="status-badge status-${request.request_status === 'Готова к выдаче' ? 'completed' : request.request_status === 'В процессе ремонта' ? 'in-progress' : 'new'}">${request.request_status || 'Новая заявка'}</span></td>
-                <td>${request.master_id || 'Не назначен'}</td>
-                <td>${actions}</td>
-            </tr>`;
-        });
-
-        html += '</tbody></table>';
-        requestsContainer.innerHTML = html;
-
-    } catch (error) {
-        console.error('Error loading requests:', error);
-    }
+function nextStatus(s) {
+  const order = ["open", "in_progress", "waiting_parts", "done"];
+  const idx = Math.max(0, order.indexOf(s));
+  return order[(idx + 1) % order.length];
 }
 
-// ===== ЗАГРУЗКА ПОЛЬЗОВАТЕЛЕЙ =====
-async function loadUsers() {
-    try {
-        if (!currentUser) return;
-
-        const permissions = ROLE_PERMISSIONS[currentUser.user_type];
-        const usersContainer = document.getElementById('usersContainer');
-
-        if (!usersContainer) return;
-
-        if (!permissions.canViewUsers) {
-            usersContainer.innerHTML = '<p>❌ Нет доступа к этой информации</p>';
-            return;
-        }
-
-        const response = await fetch(`${API_URL}/users/`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (!response.ok) {
-            usersContainer.innerHTML = '<p>Ошибка загрузки пользователей</p>';
-            return;
-        }
-
-        const data = await response.json();
-
-        if (!data.data || data.data.length === 0) {
-            usersContainer.innerHTML = '<p>Пользователей не найдено</p>';
-            return;
-        }
-
-        let html = '<table><thead><tr><th>ФИО</th><th>Логин</th><th>Телефон</th><th>Роль</th><th>Действия</th></tr></thead><tbody>';
-
-        data.data.forEach(user => {
-            let actions = '';
-
-            if (permissions.canDeleteUsers) {
-                actions = `<button class="btn btn--sm delete-user-btn" onclick="deleteUser(${user.user_id})">🗑️</button>`;
-            }
-
-            html += `<tr>
-                <td>${user.full_name}</td>
-                <td>${user.login}</td>
-                <td>${user.phone}</td>
-                <td>${user.user_type}</td>
-                <td>${actions}</td>
-            </tr>`;
-        });
-
-        html += '</tbody></table>';
-        usersContainer.innerHTML = html;
-
-    } catch (error) {
-        console.error('Error loading users:', error);
-    }
+function canEditRequest() {
+  const role = state.user?.role;
+  return role === "admin" || role === "operator" || role === "manager";
 }
 
-// ===== ЗАГРУЗКА СТАТИСТИКИ =====
-async function loadStatistics() {
-    try {
-        if (!currentUser) return;
-
-        const permissions = ROLE_PERMISSIONS[currentUser.user_type];
-        const statisticsContainer = document.getElementById('statisticsContainer');
-
-        if (!statisticsContainer) return;
-
-        if (!permissions.canViewStatistics) {
-            statisticsContainer.innerHTML = '<p>❌ Нет доступа к статистике</p>';
-            return;
-        }
-
-        const response = await fetch(`${API_URL}/requests/?page=1&limit=100`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (!response.ok) {
-            statisticsContainer.innerHTML = '<p>Ошибка загрузки статистики</p>';
-            return;
-        }
-
-        const data = await response.json();
-
-        if (!data.data || data.data.length === 0) {
-            statisticsContainer.innerHTML = '<p>Нет данных для статистики</p>';
-            return;
-        }
-
-        let requests = data.data;
-
-        if (currentUser.user_type === 'Заказчик') {
-            requests = data.data.filter(r => r.client_id === currentUser.user_id);
-
-            if (requests.length === 0) {
-                statisticsContainer.innerHTML = '<p>У вас нет заявок</p>';
-                return;
-            }
-        }
-
-        const stats = {};
-
-        requests.forEach(request => {
-            const type = request.climate_tech_type || 'Неизвестно';
-
-            if (!stats[type]) {
-                stats[type] = { total: 0, completed: 0, inProgress: 0 };
-            }
-
-            stats[type].total++;
-
-            if (request.request_status === 'Готова к выдаче') stats[type].completed++;
-            if (request.request_status === 'В процессе ремонта') stats[type].inProgress++;
-        });
-
-        let html = '<table><thead><tr><th>Тип оборудования</th><th>Всего</th><th>Завершено</th><th>В процессе</th></tr></thead><tbody>';
-
-        for (const [type, stat] of Object.entries(stats)) {
-            html += `<tr>
-                <td>${type}</td>
-                <td>${stat.total}</td>
-                <td>${stat.completed}</td>
-                <td>${stat.inProgress}</td>
-            </tr>`;
-        }
-
-        html += '</tbody></table>';
-        statisticsContainer.innerHTML = html;
-
-    } catch (error) {
-        console.error('Error loading statistics:', error);
-    }
+function canComment() {
+  const role = state.user?.role;
+  return role === "admin" || role === "specialist" || role === "manager";
 }
 
-// ===== СОЗДАНИЕ ЗАЯВКИ =====
-async function handleNewRequest(e) {
+function openRequestModal(requestId) {
+  const modal = $("#requestModal");
+  const form = $("#requestForm");
+  const isNew = requestId == null;
+
+  let r;
+  if (isNew) {
+    const maxId = state.requests.reduce((m, x) => Math.max(m, Number(x.id) || 0), 1000);
+    r = {
+      id: maxId + 1,
+      created_at: new Date().toISOString(),
+      equipment_type: "",
+      model: "",
+      problem: "",
+      customer_name: "",
+      phone: "",
+      status: "open",
+      assignee: "",
+      deadline: "",
+      completed_at: null,
+      fault_type: "",
+      comments: []
+    };
+  } else {
+    r = state.requests.find((x) => Number(x.id) === Number(requestId));
+    if (!r) {
+      showToast("Заявка не найдена");
+      return;
+    }
+  }
+
+  state.selectedRequestId = r.id;
+  $("#requestModalTitle").textContent = isNew ? "Новая заявка" : `Заявка №${r.id}`;
+
+  form.elements.id.value = r.id;
+  form.elements.created_at.value = toLocalInputFromISO(r.created_at) || nowLocalInputValue();
+  form.elements.equipment_type.value = r.equipment_type || "";
+  form.elements.model.value = r.model || "";
+  form.elements.problem.value = r.problem || "";
+  form.elements.customer_name.value = r.customer_name || "";
+  form.elements.phone.value = r.phone || "";
+  form.elements.status.value = r.status || "open";
+  form.elements.assignee.value = r.assignee || "";
+  form.elements.deadline.value = r.deadline || "";
+  form.elements.completed_at.value = toLocalInputFromISO(r.completed_at) || "";
+  form.elements.fault_type.value = r.fault_type || "";
+
+  $("#commentText").value = "";
+  renderComments(r);
+
+  const editable = canEditRequest();
+  [
+    "created_at", "equipment_type", "model", "problem", "customer_name", "phone",
+    "status", "assignee", "deadline", "completed_at", "fault_type"
+  ].forEach((name) => {
+    form.elements[name].disabled = !editable;
+  });
+
+  $("#btnSaveRequest").disabled = !editable;
+  $("#btnDeleteRequest").disabled = isNew || !editable;
+
+  const commentable = canComment();
+  $("#commentText").disabled = !commentable;
+  $("#btnAddComment").disabled = !commentable;
+
+  modal.showModal();
+}
+
+function closeModal() {
+  const modal = $("#requestModal");
+  if (modal.open) modal.close();
+  state.selectedRequestId = null;
+}
+
+function renderComments(r) {
+  const list = $("#commentsList");
+  const items = (r.comments || [])
+    .slice()
+    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
+    .map((c) => {
+      return `
+        <div class="comment">
+          <div class="comment__meta">
+            <div>${escapeHtml(c.author || "—")}</div>
+            <div>${escapeHtml(formatDateTime(c.created_at))}</div>
+          </div>
+          <div class="comment__text">${escapeHtml(c.text || "")}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  list.innerHTML = items || `<div class="muted">Комментариев пока нет.</div>`;
+}
+
+/* Переопределяем apiFetch так, чтобы работало и с относительным API (/api/...)
+   и с API_BASE (если вдруг вынесешь бэкенд отдельно). */
+async function apiFetch(path, options = {}) {
+  const base = (API_BASE || "").replace(/\/+$/, "");
+  const url = (base ? base : "") + "/" + String(path).replace(/^\/+/, "");
+
+  const token = state.user?.token;
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {})
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(url, { ...options, headers });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "");
+    throw new Error(msg || `HTTP ${res.status}`);
+  }
+  return res.json().catch(() => ({}));
+}
+
+function mapRoleFromApi(user_type) {
+  // В БД роли у тебя на русском (например "Менеджер по качеству"). [file:28]
+  if (!user_type) return "operator";
+  const t = String(user_type).toLowerCase();
+  if (t.includes("админ")) return "admin";
+  if (t.includes("оператор")) return "operator";
+  if (t.includes("специалист") || t.includes("мастер")) return "specialist";
+  if (t.includes("менеджер")) return "manager";
+  return "operator";
+}
+
+function normalizeRequestFromApi(r) {
+  // Поля API см. в /api/requests/ (data[].request_id/start_date/...) [file:27]
+  return {
+    id: r.request_id,
+    created_at: r.start_date ? new Date(r.start_date).toISOString() : new Date().toISOString(),
+    equipment_type: r.climate_tech_type || "",
+    model: r.climate_tech_model || "",
+    problem: r.problem_description || "",
+    customer_name: r.client_id ? `Клиент #${r.client_id}` : "—",
+    phone: "—",
+    status: (r.request_status || "Новая заявка").toString(),
+    assignee: r.master_id ? `Специалист #${r.master_id}` : "",
+    deadline: "",
+    completed_at: r.completion_date ? new Date(r.completion_date).toISOString() : null,
+    fault_type: "",
+    comments: []
+  };
+}
+
+function renderStats() {
+  const total = state.requests.length;
+  const done = state.requests.filter((r) => String(r.status).toLowerCase().includes("заверш")).length;
+
+  // Среднее время: completion_date - start_date (если есть)
+  const durations = state.requests
+    .filter((r) => r.completed_at && r.created_at)
+    .map((r) => new Date(r.completed_at).getTime() - new Date(r.created_at).getTime())
+    .filter((ms) => Number.isFinite(ms) && ms >= 0);
+
+  const avgMs = durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : null;
+  const avgHuman = avgMs == null ? "—" : `${Math.round(avgMs / 3600_000)} ч`;
+
+  $("#kpiTotal").textContent = String(total);
+  $("#kpiDone").textContent = String(done);
+  $("#kpiAvg").textContent = avgHuman;
+
+  // По типам неисправностей (берём fault_type если есть, иначе "Не указано")
+  const counter = new Map();
+  for (const r of state.requests) {
+    const key = (r.fault_type || "Не указано").trim() || "Не указано";
+    counter.set(key, (counter.get(key) || 0) + 1);
+  }
+
+  const rows = [...counter.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(v)}</td></tr>`)
+    .join("");
+
+  $("#breakdownTbody").innerHTML = rows || `<tr><td colspan="2" class="muted">Нет данных</td></tr>`;
+}
+
+function renderQR() {
+  const qrUrl =
+    "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" +
+    encodeURIComponent(FEEDBACK_FORM_URL);
+
+  $("#qrImg").src = qrUrl;
+  $("#qrLink").href = FEEDBACK_FORM_URL;
+  $("#qrLink").textContent = "Открыть форму";
+}
+
+function renderAll() {
+  renderRequestsTable();
+  renderStats();
+  renderQR();
+}
+
+async function loadRequestsFromApi() {
+  // Твой сервер реально отвечает на GET /api/requests/?page=1&limit=... [file:27]
+  const res = await apiFetch(`/api/requests/?page=1&limit=100`, { method: "GET" });
+  const arr = Array.isArray(res.data) ? res.data : [];
+  state.requests = arr.map(normalizeRequestFromApi);
+}
+
+async function handleLogin(login, password) {
+  // POST /api/auth/login ожидает JSON {login, password} и возвращает access_token и user_type [file:28]
+  const data = await apiFetch(`/api/auth/login`, {
+    method: "POST",
+    body: JSON.stringify({ login, password })
+  });
+
+  state.user = {
+    name: data.full_name || data.login || login,
+    role: mapRoleFromApi(data.user_type),
+    token: data.access_token,
+    user_id: data.user_id,
+    user_type: data.user_type
+  };
+  saveAuth();
+  renderAuth();
+
+  await loadRequestsFromApi();
+  renderAll();
+  showToast("Вход выполнен");
+}
+
+function wireEvents() {
+  // Tabs
+  document.querySelectorAll(".tab").forEach((b) => {
+    b.addEventListener("click", () => setActiveTab(b.dataset.tab));
+  });
+
+  // Filters
+  ["#searchInput", "#statusFilter", "#assigneeFilter"].forEach((sel) => {
+    $(sel).addEventListener("input", renderRequestsTable);
+    $(sel).addEventListener("change", renderRequestsTable);
+  });
+
+  // Table actions
+  $("#requestsTbody").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if (!btn) return;
+    const id = Number(btn.dataset.id);
+    const action = btn.dataset.action;
+
+    if (action === "open") openRequestModal(id);
+    if (action === "status") {
+      // В твоём бэке статусы на русском, поэтому здесь просто циклим по 4 вариантам интерфейса
+      // (можешь потом привязать к реальным строкам из БД). [file:27]
+      const r = state.requests.find((x) => Number(x.id) === id);
+      if (!r) return;
+      const current = String(r.status || "");
+      const variants = ["Новая заявка", "В процессе ремонта", "Ожидание комплектующих", "Завершена"];
+      const idx = Math.max(0, variants.indexOf(current));
+      r.status = variants[(idx + 1) % variants.length];
+      saveRequests();
+      renderRequestsTable();
+      renderStats();
+      showToast("Статус изменён (локально)");
+    }
+  });
+
+  // New request
+  $("#btnNewRequest").addEventListener("click", () => openRequestModal(null));
+
+  // Modal controls
+  $("#btnCloseModal").addEventListener("click", closeModal);
+  $("#btnCancel").addEventListener("click", closeModal);
+
+  // Add comment
+  $("#btnAddComment").addEventListener("click", () => {
+    const id = state.selectedRequestId;
+    const r = state.requests.find((x) => Number(x.id) === Number(id));
+    if (!r) return;
+
+    const text = ($("#commentText").value || "").trim();
+    if (!text) {
+      showToast("Введите текст комментария");
+      return;
+    }
+
+    r.comments = r.comments || [];
+    r.comments.push({
+      id: uuidv4(),
+      author: state.user?.name || "Пользователь",
+      created_at: new Date().toISOString(),
+      text
+    });
+
+    $("#commentText").value = "";
+    saveRequests();
+    renderComments(r);
+    showToast("Комментарий добавлен");
+  });
+
+  // Save request (локально; к API можно подключить позже, когда поправишь PUT route)
+  $("#requestForm").addEventListener("submit", (e) => {
     e.preventDefault();
-
-    if (!currentUser) {
-        showAlert('requestsAlert', '❌ Ошибка: пользователь не определен', 'error');
-        return;
+    if (!canEditRequest()) {
+      showToast("Недостаточно прав");
+      return;
     }
 
-    const type = document.getElementById('requestType')?.value;
-    const model = document.getElementById('requestModel')?.value;
-    const problem = document.getElementById('requestProblem')?.value;
+    const form = $("#requestForm");
+    const id = Number(form.elements.id.value);
+    const idx = state.requests.findIndex((x) => Number(x.id) === id);
 
-    if (!type || !model || !problem) {
-        showAlert('requestsAlert', '❌ Заполните все поля', 'error');
-        return;
+    const createdISO = toISOFromLocalInput(form.elements.created_at.value);
+    if (!createdISO) {
+      showToast("Некорректная дата");
+      return;
     }
 
-    try {
-        const response = await fetch(`${API_URL}/requests/`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                climate_tech_type: type,
-                climate_tech_model: model,
-                problem_description: problem,
-                client_id: currentUser.user_id
-            })
-        });
+    const updated = {
+      ...(idx >= 0 ? state.requests[idx] : {}),
+      id,
+      created_at: createdISO,
+      equipment_type: form.elements.equipment_type.value.trim(),
+      model: form.elements.model.value.trim(),
+      problem: form.elements.problem.value.trim(),
+      customer_name: form.elements.customer_name.value.trim(),
+      phone: form.elements.phone.value.trim(),
+      status: form.elements.status.value,
+      assignee: form.elements.assignee.value.trim(),
+      deadline: form.elements.deadline.value,
+      completed_at: toISOFromLocalInput(form.elements.completed_at.value),
+      fault_type: form.elements.fault_type.value.trim(),
+      comments: (idx >= 0 ? state.requests[idx].comments : []) || []
+    };
 
-        if (response.ok) {
-            showAlert('requestsAlert', '✅ Заявка успешно создана', 'success');
-            document.getElementById('newRequestForm').reset();
-            loadRequests();
-        } else {
-            const error = await response.json();
-            showAlert('requestsAlert', '❌ ' + (error.error || 'Ошибка при создании заявки'), 'error');
-        }
-    } catch (error) {
-        showAlert('requestsAlert', '❌ Ошибка подключения', 'error');
-        console.error('Error:', error);
+    // Простая валидация обязательных полей (в духе требований ТЗ). [file:2]
+    if (!updated.equipment_type || !updated.model || !updated.problem || !updated.customer_name || !updated.phone) {
+      showToast("Заполните обязательные поля");
+      return;
     }
-}
 
-// ===== РЕДАКТИРОВАНИЕ ЗАЯВКИ =====
-function editRequest(requestId) {
-    alert('Функция редактирования заявки ' + requestId + ' (в разработке)');
-}
+    if (idx >= 0) state.requests[idx] = updated;
+    else state.requests.push(updated);
 
-// ===== ДОБАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯ =====
-async function handleAddUser(e) {
+    saveRequests();
+    renderAll();
+    closeModal();
+    showToast("Сохранено (локально)");
+  });
+
+  // Delete request (локально)
+  $("#btnDeleteRequest").addEventListener("click", () => {
+    if (!canEditRequest()) {
+      showToast("Недостаточно прав");
+      return;
+    }
+    const id = state.selectedRequestId;
+    if (!id) return;
+
+    const ok = confirm(`Удалить заявку №${id}?`);
+    if (!ok) return;
+
+    state.requests = state.requests.filter((x) => Number(x.id) !== Number(id));
+    saveRequests();
+    renderAll();
+    closeModal();
+    showToast("Удалено (локально)");
+  });
+
+  // Stats refresh
+  $("#btnRecalcStats").addEventListener("click", () => {
+    renderStats();
+    showToast("Статистика обновлена");
+  });
+
+  // Manager tools
+  $("#managerForm").addEventListener("submit", (e) => {
     e.preventDefault();
-
-    const permissions = ROLE_PERMISSIONS[currentUser.user_type];
-
-    if (!permissions.canAddUsers) {
-        showAlert('userAlert', '❌ У вас нет прав для добавления пользователей', 'error');
-        return;
+    const role = state.user?.role;
+    if (!(role === "manager" || role === "admin")) {
+      showToast("Доступно только менеджеру");
+      return;
     }
 
-    const fullName = document.getElementById('newUserName')?.value?.trim();
-    const phone = document.getElementById('newUserPhone')?.value?.trim();
-    const login = document.getElementById('newUserLogin')?.value?.trim();
-    const password = document.getElementById('newUserPassword')?.value?.trim();
-    const userType = document.getElementById('newUserType')?.value;
+    const f = e.target;
+    const requestId = Number(f.requestId.value);
+    const assignee = (f.assignee.value || "").trim();
+    const deadline = f.deadline.value || "";
 
-    if (!fullName || !phone || !login || !password || !userType) {
-        showAlert('userAlert', '❌ Заполните все поля', 'error');
-        return;
+    const r = state.requests.find((x) => Number(x.id) === requestId);
+    if (!r) {
+      showToast("Заявка не найдена");
+      return;
     }
 
-    if (!validatePhone(phone)) {
-        showAlert('userAlert', '❌ Неверный формат телефона. Используйте: 8-999-999-99-99', 'error');
-        return;
-    }
+    if (assignee) r.assignee = assignee;
+    if (deadline) r.deadline = deadline;
 
-    if (login.length < 3) {
-        showAlert('userAlert', '❌ Логин должен содержать минимум 3 символа', 'error');
-        return;
-    }
+    r.comments = r.comments || [];
+    r.comments.push({
+      id: uuidv4(),
+      author: state.user?.name || "Менеджер",
+      created_at: new Date().toISOString(),
+      text: `Действие менеджера: ${assignee ? `назначен ответственный: ${assignee}. ` : ""}${deadline ? `срок продлён до: ${deadline}.` : ""}`
+    });
 
-    if (password.length < 3) {
-        showAlert('userAlert', '❌ Пароль должен содержать минимум 3 символа', 'error');
-        return;
-    }
+    saveRequests();
+    renderAll();
+    showToast("Применено (локально)");
+  });
+
+  // Auth
+  $("#btnLogout").addEventListener("click", logout);
+
+  $("#loginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const username = String(fd.get("username") || "").trim();
+    const password = String(fd.get("password") || "").trim();
 
     try {
-        const response = await fetch(`${API_URL}/users/`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                full_name: fullName,
-                phone: phone,
-                login: login,
-                password: password,
-                user_type: userType
-            })
-        });
-
-        if (response.ok) {
-            showAlert('userAlert', '✅ Пользователь успешно добавлен', 'success');
-            document.getElementById('addUserForm').reset();
-            loadUsers();
-        } else {
-            const error = await response.json();
-            showAlert('userAlert', '❌ ' + (error.error || 'Ошибка при добавлении'), 'error');
-        }
-    } catch (error) {
-        showAlert('userAlert', '❌ Ошибка подключения', 'error');
-        console.error('Error:', error);
+      await handleLogin(username, password);
+    } catch (err) {
+      $("#loginHint").hidden = false;
+      $("#loginHint").textContent = `Ошибка входа: ${err.message || err}`;
+      showToast("Не удалось войти");
     }
+  });
 }
 
-// ===== ВАЛИДАЦИЯ ТЕЛЕФОНА =====
-function validatePhone(phone) {
-    const phoneRegex = /^8-\d{3}-\d{3}-\d{2}-\d{2}$|^\d{11}$|^8\d{10}$/;
-    return phoneRegex.test(phone);
-}
+document.addEventListener("DOMContentLoaded", async () => {
+  // Сервер у тебя раздаёт фронт из папки frontend как статику, так что /js/app.js грузится напрямую. [file:29]
+  state.user = loadAuth();
+  state.requests = loadRequests();
 
-// ===== УДАЛЕНИЕ =====
-async function deleteRequest(requestId) {
-    if (!confirm('Удалить заявку?')) return;
+  renderAuth();
+  setActiveTab("requests");
+  wireEvents();
+  renderQR();
 
-    const permissions = ROLE_PERMISSIONS[currentUser.user_type];
-
-    if (!permissions.canDeleteRequests) {
-        alert('❌ У вас нет прав для удаления');
-        return;
-    }
-
+  // Если уже есть токен — пробуем подтянуть заявки с API, иначе остаёмся на localStorage.
+  if (state.user?.token) {
     try {
-        const response = await fetch(`${API_URL}/requests/${requestId}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (response.ok) {
-            showAlert('requestsAlert', '✅ Заявка удалена', 'success');
-            loadRequests();
-        } else {
-            showAlert('requestsAlert', '❌ Ошибка при удалении', 'error');
-        }
-    } catch (error) {
-        showAlert('requestsAlert', '❌ Ошибка подключения', 'error');
+      await loadRequestsFromApi();
+    } catch {
+      // молча оставляем локальные данные
     }
-}
+  }
 
-async function deleteUser(userId) {
-    if (!confirm('Удалить пользователя?')) return;
-
-    const permissions = ROLE_PERMISSIONS[currentUser.user_type];
-
-    if (!permissions.canDeleteUsers) {
-        alert('❌ У вас нет прав для удаления');
-        return;
-    }
-
-    try {
-        const response = await fetch(`${API_URL}/users/${userId}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (response.ok) {
-            showAlert('userAlert', '✅ Пользователь удален', 'success');
-            loadUsers();
-        } else {
-            showAlert('userAlert', '❌ Ошибка при удалении', 'error');
-        }
-    } catch (error) {
-        showAlert('userAlert', '❌ Ошибка подключения', 'error');
-    }
-}
-
-// ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
-function showAlert(elementId, message, type) {
-    const element = document.getElementById(elementId);
-
-    if (element) {
-        element.textContent = message;
-        element.className = 'alert alert-' + type;
-        element.style.display = 'block';
-
-        setTimeout(() => {
-            element.style.display = 'none';
-        }, 4000);
-    }
-}
+  seedIfEmpty();
+  renderAll();
+});

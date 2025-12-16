@@ -1,274 +1,313 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🛠️ Climate Tech - Система учета заявок</title>
-    <link rel="stylesheet" href="/css/styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Учет заявок на ремонт</title>
+  <link rel="stylesheet" href="./css/styles.css" />
 </head>
 <body>
+  <header class="topbar">
+    <div class="container topbar__inner">
+      <div class="brand">
+        <div class="brand__title">Учет заявок на ремонт</div>
+        <div class="brand__subtitle" id="appSubtitle">Климатическое оборудование</div>
+      </div>
 
-<!-- СТРАНИЦА ЛОГИНА -->
-<div id="loginPage" class="page active">
-    <div class="login-container">
-        <div class="login-box">
-            <h1>🛠️ Climate Tech</h1>
-            <p class="subtitle">Система учета заявок на ремонт</p>
+      <div class="userbar" id="userbar" hidden>
+        <div class="userbar__meta">
+          <div class="userbar__name" id="userName"></div>
+          <div class="userbar__role" id="userRole"></div>
+        </div>
+        <button class="btn btn--ghost" id="btnLogout" type="button">Выйти</button>
+      </div>
+    </div>
+  </header>
 
-            <div id="loginAlert" class="alert alert-error"></div>
+  <main class="container page">
+    <!-- Login -->
+    <section class="card" id="loginView">
+      <h1 class="h1">Вход</h1>
+      <p class="muted">
+        Для демонстрации можно использовать пользователей: operator/operator, specialist/specialist, manager/manager, admin/admin.
+      </p>
 
-            <form id="loginForm" class="login-form">
-                <div class="form-group">
-                    <label for="loginInput" class="form-label">Логин</label>
-                    <input
-                        type="text"
-                        id="loginInput"
-                        class="form-control"
-                        placeholder="Введите логин"
-                        required
-                    >
-                </div>
+      <form class="grid grid--2" id="loginForm">
+        <label class="field">
+          <span class="field__label">Логин</span>
+          <input class="input" name="username" autocomplete="username" required />
+        </label>
 
-                <div class="form-group">
-                    <label for="passwordInput" class="form-label">Пароль</label>
-                    <input
-                        type="password"
-                        id="passwordInput"
-                        class="form-control"
-                        placeholder="Введите пароль"
-                        required
-                    >
-                </div>
+        <label class="field">
+          <span class="field__label">Пароль</span>
+          <input class="input" name="password" type="password" autocomplete="current-password" required />
+        </label>
 
-                <button type="submit" class="btn btn--primary btn--full-width">Вход</button>
+        <div class="grid__full actions">
+          <button class="btn btn--primary" type="submit">Войти</button>
+        </div>
+      </form>
+
+      <div class="alert alert--info" id="loginHint" hidden></div>
+    </section>
+
+    <!-- App -->
+    <section id="appView" hidden>
+      <nav class="tabs" aria-label="Навигация">
+        <button class="tab is-active" data-tab="requests" type="button">Заявки</button>
+        <button class="tab" data-tab="stats" type="button">Статистика</button>
+        <button class="tab" data-tab="quality" type="button">Качество / QR</button>
+      </nav>
+
+      <!-- Requests -->
+      <section class="card tabpanel" id="tab-requests">
+        <div class="card__head">
+          <h2 class="h2">Список заявок</h2>
+
+          <div class="card__headActions">
+            <button class="btn btn--primary" id="btnNewRequest" type="button">Новая заявка</button>
+          </div>
+        </div>
+
+        <div class="grid grid--3">
+          <label class="field">
+            <span class="field__label">Поиск</span>
+            <input class="input" id="searchInput" placeholder="Номер / клиент / телефон / модель" />
+          </label>
+
+          <label class="field">
+            <span class="field__label">Статус</span>
+            <select class="select" id="statusFilter">
+              <option value="">Все</option>
+              <option value="open">Открыта</option>
+              <option value="in_progress">В ремонте</option>
+              <option value="waiting_parts">Ожидание комплектующих</option>
+              <option value="done">Завершена</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Ответственный</span>
+            <input class="input" id="assigneeFilter" placeholder="ФИО специалиста" />
+          </label>
+        </div>
+
+        <div class="tableWrap">
+          <table class="table" id="requestsTable">
+            <thead>
+              <tr>
+                <th>№</th>
+                <th>Дата</th>
+                <th>Оборудование</th>
+                <th>Модель</th>
+                <th>Клиент</th>
+                <th>Телефон</th>
+                <th>Статус</th>
+                <th>Ответственный</th>
+                <th class="col-actions">Действия</th>
+              </tr>
+            </thead>
+            <tbody id="requestsTbody"></tbody>
+          </table>
+        </div>
+
+        <div class="empty" id="requestsEmpty" hidden>
+          Нет заявок по заданным условиям.
+        </div>
+      </section>
+
+      <!-- Stats -->
+      <section class="card tabpanel" id="tab-stats" hidden>
+        <div class="card__head">
+          <h2 class="h2">Статистика</h2>
+          <button class="btn btn--ghost" id="btnRecalcStats" type="button">Обновить</button>
+        </div>
+
+        <div class="kpiGrid">
+          <div class="kpi">
+            <div class="kpi__label">Выполнено заявок</div>
+            <div class="kpi__value" id="kpiDone">0</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi__label">Среднее время выполнения</div>
+            <div class="kpi__value" id="kpiAvg">—</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi__label">Всего заявок</div>
+            <div class="kpi__value" id="kpiTotal">0</div>
+          </div>
+        </div>
+
+        <h3 class="h3">Статистика по типам неисправностей</h3>
+        <div class="tableWrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Тип</th>
+                <th>Количество</th>
+              </tr>
+            </thead>
+            <tbody id="breakdownTbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Quality / QR -->
+      <section class="card tabpanel" id="tab-quality" hidden>
+        <div class="card__head">
+          <h2 class="h2">Качество / QR‑код</h2>
+        </div>
+
+        <div class="grid grid--2">
+          <div class="card card--inner">
+            <h3 class="h3">Оценка качества</h3>
+            <p class="muted">
+              QR‑код ведёт на форму опроса качества обслуживания.
+            </p>
+            <div class="qrBlock">
+              <img id="qrImg" alt="QR код на форму" />
+              <a class="link" id="qrLink" target="_blank" rel="noreferrer">Открыть форму</a>
+            </div>
+          </div>
+
+          <div class="card card--inner" id="managerTools" hidden>
+            <h3 class="h3">Инструменты менеджера</h3>
+
+            <div class="muted">
+              Доступно менеджеру по качеству: привлечение специалистов и продление срока (с согласованием заказчика).
+            </div>
+
+            <form class="grid grid--2" id="managerForm">
+              <label class="field">
+                <span class="field__label">Заявка №</span>
+                <input class="input" name="requestId" placeholder="например 1001" required />
+              </label>
+
+              <label class="field">
+                <span class="field__label">Назначить специалиста</span>
+                <input class="input" name="assignee" placeholder="ФИО" />
+              </label>
+
+              <label class="field grid__full">
+                <span class="field__label">Продлить срок до</span>
+                <input class="input" name="deadline" type="date" />
+              </label>
+
+              <div class="grid__full actions">
+                <button class="btn btn--primary" type="submit">Применить</button>
+              </div>
             </form>
 
-            <div class="test-credentials">
-                <p><strong>🧪 Тестовые учетные данные:</strong></p>
-                <ul>
-                    <li><code>login1 / pass1</code> - Менеджер</li>
-                    <li><code>login2 / pass2</code> - Специалист</li>
-                    <li><code>login4 / pass4</code> - Оператор</li>
-                    <li><code>login6 / pass6</code> - Заказчик</li>
-                    <li><code>login11 / pass11</code> - Менеджер по качеству ⭐</li>
-                </ul>
-            </div>
+            <div class="alert alert--info" id="managerHint" hidden></div>
+          </div>
         </div>
-    </div>
-</div>
+      </section>
+    </section>
+  </main>
 
-<!-- ГЛАВНАЯ СТРАНИЦА ПРИЛОЖЕНИЯ -->
-<div id="appPage" class="page">
-    <div class="app-container">
-        <!-- БОКОВОЕ МЕНЮ -->
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <h2>🛠️ Climate Tech</h2>
-                <div class="user-info">
-                    <p id="userName" class="user-name">-</p>
-                    <p id="userRole" class="user-role">-</p>
-                </div>
-            </div>
+  <!-- Modal: Request -->
+  <dialog class="modal" id="requestModal">
+    <form method="dialog" class="modal__box" id="requestForm">
+      <div class="modal__head">
+        <div class="modal__title" id="requestModalTitle">Заявка</div>
+        <button class="iconBtn" id="btnCloseModal" type="button" aria-label="Закрыть">✕</button>
+      </div>
 
-            <nav class="sidebar-menu">
-                <button class="nav-tab active" onclick="switchTab('dashboard')">
-                    📊 Панель управления
-                </button>
-                <button class="nav-tab" onclick="switchTab('requests')">
-                    📋 Заявки
-                </button>
-                <button class="nav-tab" id="statisticsTab" onclick="switchTab('statistics')">
-                    📈 Статистика
-                </button>
-                <button class="nav-tab" id="usersTab" onclick="switchTab('users')">
-                    👥 Пользователи
-                </button>
-            </nav>
+      <div class="grid grid--2">
+        <label class="field">
+          <span class="field__label">Номер заявки</span>
+          <input class="input" name="id" readonly />
+        </label>
 
-            <div class="sidebar-footer">
-                <button class="btn btn--secondary btn--full-width" onclick="logout()">
-                    🚪 Выход
-                </button>
-            </div>
-        </aside>
+        <label class="field">
+          <span class="field__label">Дата добавления</span>
+          <input class="input" name="created_at" type="datetime-local" required />
+        </label>
 
-        <!-- ОСНОВНОЙ КОНТЕНТ -->
-        <main class="content">
-            <!-- ПАНЕЛЬ УПРАВЛЕНИЯ -->
-            <section id="dashboard" class="page active">
-                <div class="page-header">
-                    <h1>📊 Панель управления</h1>
-                    <p>Добро пожаловать в систему управления заявками</p>
-                </div>
+        <label class="field">
+          <span class="field__label">Тип оборудования</span>
+          <input class="input" name="equipment_type" placeholder="Кондиционер / вентиляция / ..." required />
+        </label>
 
-                <div id="dashboardStats" class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value">-</div>
-                        <div class="stat-label">Загрузка...</div>
-                    </div>
-                </div>
-            </section>
+        <label class="field">
+          <span class="field__label">Модель</span>
+          <input class="input" name="model" required />
+        </label>
 
-            <!-- ЗАЯВКИ -->
-            <section id="requests" class="page">
-                <div class="page-header">
-                    <h1>📋 Список заявок</h1>
-                </div>
+        <label class="field grid__full">
+          <span class="field__label">Описание проблемы</span>
+          <textarea class="textarea" name="problem" rows="3" required></textarea>
+        </label>
 
-                <div class="filters">
-                    <div class="filter-group">
-                        <label>Фильтр по статусу</label>
-                        <select id="statusFilter" class="form-control">
-                            <option value="">Все статусы</option>
-                            <option value="Новая заявка">Новая заявка</option>
-                            <option value="В процессе ремонта">В процессе ремонта</option>
-                            <option value="Ожидание комплектующих">Ожидание комплектующих</option>
-                            <option value="Готова к выдаче">Готова к выдаче</option>
-                        </select>
-                    </div>
-                </div>
+        <label class="field">
+          <span class="field__label">ФИО заказчика</span>
+          <input class="input" name="customer_name" required />
+        </label>
 
-                <div id="requestsAlert" class="alert"></div>
+        <label class="field">
+          <span class="field__label">Телефон</span>
+          <input class="input" name="phone" placeholder="+7..." required />
+        </label>
 
-                <div id="requestsContainer" class="requests-list">
-                    <p>Загрузка заявок...</p>
-                </div>
+        <label class="field">
+          <span class="field__label">Статус</span>
+          <select class="select" name="status" required>
+            <option value="open">Открыта</option>
+            <option value="in_progress">В ремонте</option>
+            <option value="waiting_parts">Ожидание комплектующих</option>
+            <option value="done">Завершена</option>
+          </select>
+        </label>
 
-                <div id="newRequestSection" class="new-request-section">
-                    <h2>➕ Создать новую заявку</h2>
+        <label class="field">
+          <span class="field__label">Ответственный</span>
+          <input class="input" name="assignee" placeholder="ФИО специалиста" />
+        </label>
 
-                    <form id="newRequestForm" class="form">
-                        <div class="form-group">
-                            <label for="requestType" class="form-label">Тип оборудования</label>
-                            <input
-                                type="text"
-                                id="requestType"
-                                class="form-control"
-                                placeholder="Например: Кондиционер, Обогреватель"
-                                required
-                            >
-                        </div>
+        <label class="field">
+          <span class="field__label">Срок до</span>
+          <input class="input" name="deadline" type="date" />
+        </label>
 
-                        <div class="form-group">
-                            <label for="requestModel" class="form-label">Модель устройства</label>
-                            <input
-                                type="text"
-                                id="requestModel"
-                                class="form-control"
-                                placeholder="Например: LG AC-123"
-                                required
-                            >
-                        </div>
+        <label class="field">
+          <span class="field__label">Дата завершения</span>
+          <input class="input" name="completed_at" type="datetime-local" />
+        </label>
 
-                        <div class="form-group">
-                            <label for="requestProblem" class="form-label">Описание проблемы</label>
-                            <textarea
-                                id="requestProblem"
-                                class="form-control"
-                                rows="4"
-                                placeholder="Опишите проблему подробнее..."
-                                required
-                            ></textarea>
-                        </div>
+        <label class="field grid__full">
+          <span class="field__label">Тип неисправности (для статистики)</span>
+          <input class="input" name="fault_type" placeholder="Например: утечка фреона, электрика, шум, ..." />
+        </label>
+      </div>
 
-                        <button type="submit" class="btn btn--primary">✅ Создать заявку</button>
-                    </form>
-                </div>
-            </section>
+      <div class="split">
+        <div class="card card--inner">
+          <h3 class="h3">Комментарии</h3>
+          <div class="comments" id="commentsList"></div>
 
-            <!-- СТАТИСТИКА -->
-            <section id="statistics" class="page">
-                <div class="page-header">
-                    <h1>📈 Статистика</h1>
-                    <p>Анализ выполненных работ</p>
-                </div>
+          <label class="field">
+            <span class="field__label">Новый комментарий</span>
+            <textarea class="textarea" id="commentText" rows="2" placeholder="Комментарий специалиста / комплектующие / запрос помощи"></textarea>
+          </label>
 
-                <div id="statisticsContainer" class="statistics-table">
-                    <p>Загрузка статистики...</p>
-                </div>
-            </section>
+          <div class="actions">
+            <button class="btn btn--ghost" id="btnAddComment" type="button">Добавить комментарий</button>
+          </div>
+        </div>
 
-            <!-- УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ -->
-            <section id="users" class="page">
-                <div class="page-header">
-                    <h1>👥 Управление пользователями</h1>
-                </div>
+        <div class="modal__actions">
+          <button class="btn btn--danger" id="btnDeleteRequest" type="button">Удалить</button>
+          <div class="modal__actionsRight">
+            <button class="btn btn--ghost" id="btnCancel" type="button">Назад</button>
+            <button class="btn btn--primary" id="btnSaveRequest" type="submit">Сохранить</button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </dialog>
 
-                <div id="userAlert" class="alert"></div>
+  <div class="toast" id="toast" hidden></div>
 
-                <div id="usersContainer" class="users-list">
-                    <p>Загрузка пользователей...</p>
-                </div>
-
-                <div id="addUserSection" class="add-user-section">
-                    <h2>➕ Добавить нового пользователя</h2>
-
-                    <form id="addUserForm" class="form">
-                        <div class="form-group">
-                            <label for="newUserName" class="form-label">ФИО</label>
-                            <input
-                                type="text"
-                                id="newUserName"
-                                class="form-control"
-                                placeholder="Полное имя"
-                                required
-                            >
-                        </div>
-
-                        <div class="form-group">
-                            <label for="newUserPhone" class="form-label">Номер телефона</label>
-                            <input
-                                type="tel"
-                                id="newUserPhone"
-                                class="form-control"
-                                placeholder="8-999-999-99-99"
-                                required
-                            >
-                        </div>
-
-                        <div class="form-group">
-                            <label for="newUserLogin" class="form-label">Логин</label>
-                            <input
-                                type="text"
-                                id="newUserLogin"
-                                class="form-control"
-                                placeholder="Уникальный логин"
-                                required
-                            >
-                        </div>
-
-                        <div class="form-group">
-                            <label for="newUserPassword" class="form-label">Пароль</label>
-                            <input
-                                type="password"
-                                id="newUserPassword"
-                                class="form-control"
-                                placeholder="Пароль"
-                                required
-                            >
-                        </div>
-
-                        <div class="form-group">
-                            <label for="newUserType" class="form-label">Роль</label>
-                            <select id="newUserType" class="form-control" required>
-                                <option value="">-- Выберите роль --</option>
-                                <option value="Менеджер">Менеджер</option>
-                                <option value="Специалист">Специалист</option>
-                                <option value="Оператор">Оператор</option>
-                                <option value="Менеджер по качеству">Менеджер по качеству</option>
-                                <option value="Заказчик">Заказчик</option>
-                            </select>
-                        </div>
-
-                        <button type="submit" class="btn btn--primary">➕ Добавить пользователя</button>
-                    </form>
-                </div>
-            </section>
-        </main>
-    </div>
-</div>
-
-<script src="/js/app.js"></script>
-
+  <script src="./js/app.js"></script>
 </body>
 </html>

@@ -4,6 +4,7 @@ import jwt
 import os
 from models.user import User
 from database import db
+from werkzeug.security import check_password_hash
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
@@ -15,7 +16,6 @@ def login():
     """Вход пользователя и возврат JWT токена"""
     try:
         data = request.get_json()
-
         if not data or not data.get('login') or not data.get('password'):
             return jsonify({'error': 'Missing login or password'}), 400
 
@@ -28,11 +28,20 @@ def login():
         if not user:
             return jsonify({'error': 'Invalid login or password'}), 401
 
-        # Проверка пароля
-        if user.password != password:
+        # ✅ УНИВЕРСАЛЬНАЯ проверка пароля (хеш ИЛИ открытый текст)
+        password_valid = False
+
+        # Если пароль похож на хеш (длинный) - проверяем через check_password_hash
+        if len(user.password) > 50:  # Хеши обычно длиннее 50 символов
+            password_valid = check_password_hash(user.password, password)
+        else:
+            # Старый формат - открытый текст
+            password_valid = (user.password == password)
+
+        if not password_valid:
             return jsonify({'error': 'Invalid login or password'}), 401
 
-        # Генерация JWT токена с full_name и user_id
+        # Генерация JWT токена
         token_payload = {
             'user_id': user.user_id,
             'login': user.login,

@@ -67,7 +67,7 @@ def get_all_requests(current_user):
 
 
 # ============================================================================
-# GET /api/requests/<id> - Получить одну заявку
+# GET /api/requests/<request_id> - Получить одну заявку
 # ============================================================================
 
 @requests_bp.route('/<int:request_id>', methods=['GET'])
@@ -76,7 +76,6 @@ def get_request(request_id, current_user):
     """Получить информацию о заявке"""
     try:
         req = RepairRequest.query.get(request_id)
-
         if not req:
             return jsonify({'error': 'Request not found'}), 404
 
@@ -110,23 +109,18 @@ def get_request(request_id, current_user):
 def create_request(current_user):
     """Создать новую заявку"""
     try:
-        # Проверка прав - Оператор, Специалист, Менеджер могут создавать
-        allowed_roles = ['Оператор', 'Специалист', 'Менеджер', 'Заказчик']
+        # Проверка прав - добавлен "Менеджер по качеству"
+        allowed_roles = ['Оператор', 'Специалист', 'Менеджер', 'Менеджер по качеству', 'Заказчик']
         if current_user.get('user_type') not in allowed_roles:
             return jsonify({'error': 'Permission denied'}), 403
 
         data = request.get_json()
         required_fields = ['climate_tech_type', 'climate_tech_model', 'problem_description', 'client_id']
-
         if not all(field in data for field in required_fields):
             return jsonify({'error': 'Missing required fields'}), 400
 
-        # Генерируем новый ID
-        max_id = db.session.query(db.func.max(RepairRequest.request_id)).scalar() or 0
-        new_id = max_id + 1
-
+        # НЕ генерируем ID вручную - PostgreSQL сделает это автоматически
         new_request = RepairRequest(
-            request_id=new_id,
             start_date=date.today(),
             climate_tech_type=data['climate_tech_type'],
             climate_tech_model=data['climate_tech_model'],
@@ -150,20 +144,19 @@ def create_request(current_user):
 
 
 # ============================================================================
-# PUT /api/requests/<id> - Обновить заявку
+# PUT /api/requests/<request_id> - Обновить заявку
 # ============================================================================
 
 @requests_bp.route('/<int:request_id>', methods=['PUT'])
 @require_auth
 def update_request(request_id, current_user):
-    """Обновить заявку (Специалист, Менеджер)"""
+    """Обновить заявку (Специалист, Менеджер, Менеджер по качеству)"""
     try:
-        # Проверка прав - только Специалист и Менеджер могут редактировать
-        if current_user.get('user_type') not in ['Специалист', 'Менеджер']:
+        # Проверка прав - добавлен "Менеджер по качеству"
+        if current_user.get('user_type') not in ['Специалист', 'Менеджер', 'Менеджер по качеству']:
             return jsonify({'error': 'Permission denied'}), 403
 
         req = RepairRequest.query.get(request_id)
-
         if not req:
             return jsonify({'error': 'Request not found'}), 404
 
@@ -172,10 +165,13 @@ def update_request(request_id, current_user):
         # Обновляем только указанные поля
         if 'request_status' in data and data['request_status']:
             req.request_status = data['request_status']
+
         if 'master_id' in data and data['master_id']:
             req.master_id = data['master_id']
+
         if 'repair_parts' in data and data['repair_parts']:
             req.repair_parts = data['repair_parts']
+
         if 'completion_date' in data and data['completion_date']:
             req.completion_date = datetime.fromisoformat(data['completion_date']).date()
 
@@ -193,7 +189,7 @@ def update_request(request_id, current_user):
 
 
 # ============================================================================
-# DELETE /api/requests/<id> - Удалить заявку
+# DELETE /api/requests/<request_id> - Удалить заявку
 # ============================================================================
 
 @requests_bp.route('/<int:request_id>', methods=['DELETE'])
@@ -206,7 +202,6 @@ def delete_request(request_id, current_user):
             return jsonify({'error': 'Permission denied - only Manager can delete'}), 403
 
         req = RepairRequest.query.get(request_id)
-
         if not req:
             return jsonify({'error': 'Request not found'}), 404
 

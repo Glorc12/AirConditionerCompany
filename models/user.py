@@ -1,5 +1,6 @@
 from database import db
 
+
 class User(db.Model):
     __tablename__ = 'users'
 
@@ -18,3 +19,4 @@ class User(db.Model):
             'login': self.login,
             'user_type': self.user_type
         }
+

@@ -265,8 +265,8 @@ def update_user(user_id, current_user):
             user.phone = data['phone']
 
         if 'password' in data:
-
-            user.password = data['password']
+            from werkzeug.security import generate_password_hash
+            user.password = generate_password_hash(data['password'])  # ✅ Хешируем
 
         # Только Менеджер может менять роль
 
