@@ -6,7 +6,6 @@ from datetime import date, datetime
 
 requests_bp = Blueprint('requests', __name__, url_prefix='/api/requests')
 
-
 # ============================================================================
 # GET /api/requests/ - Получить все заявки
 # ============================================================================
@@ -65,9 +64,8 @@ def get_all_requests(current_user):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
 # ============================================================================
-# GET /api/requests/<request_id> - Получить одну заявку
+# GET /api/requests/<int:request_id> - Получить одну заявку
 # ============================================================================
 
 @requests_bp.route('/<int:request_id>', methods=['GET'])
@@ -99,7 +97,6 @@ def get_request(request_id, current_user):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
 # ============================================================================
 # POST /api/requests/ - Создать заявку
 # ============================================================================
@@ -116,17 +113,18 @@ def create_request(current_user):
 
         data = request.get_json()
         required_fields = ['climate_tech_type', 'climate_tech_model', 'problem_description', 'client_id']
+
         if not all(field in data for field in required_fields):
             return jsonify({'error': 'Missing required fields'}), 400
 
-        # НЕ генерируем ID вручную - PostgreSQL сделает это автоматически
         new_request = RepairRequest(
             start_date=date.today(),
             climate_tech_type=data['climate_tech_type'],
             climate_tech_model=data['climate_tech_model'],
             problem_description=data['problem_description'],
             request_status='Новая заявка',
-            client_id=data['client_id']
+            client_id=data['client_id'],
+            master_id=data.get('master_id')  # можно сразу назначить ответственного
         )
 
         db.session.add(new_request)
@@ -142,9 +140,8 @@ def create_request(current_user):
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
-
 # ============================================================================
-# PUT /api/requests/<request_id> - Обновить заявку
+# PUT /api/requests/<int:request_id> - Обновить заявку
 # ============================================================================
 
 @requests_bp.route('/<int:request_id>', methods=['PUT'])
@@ -152,7 +149,6 @@ def create_request(current_user):
 def update_request(request_id, current_user):
     """Обновить заявку (Специалист, Менеджер, Менеджер по качеству)"""
     try:
-        # Проверка прав - добавлен "Менеджер по качеству"
         if current_user.get('user_type') not in ['Специалист', 'Менеджер', 'Менеджер по качеству']:
             return jsonify({'error': 'Permission denied'}), 403
 
@@ -166,10 +162,12 @@ def update_request(request_id, current_user):
         if 'request_status' in data and data['request_status']:
             req.request_status = data['request_status']
 
-        if 'master_id' in data and data['master_id']:
-            req.master_id = data['master_id']
+        # Назначение/смена ответственного
+        if 'master_id' in data:
+            # Разрешаем снять назначение, если master_id == None
+            req.master_id = data['master_id'] if data['master_id'] else None
 
-        if 'repair_parts' in data and data['repair_parts']:
+        if 'repair_parts' in data and data['repair_parts'] is not None:
             req.repair_parts = data['repair_parts']
 
         if 'completion_date' in data and data['completion_date']:
@@ -187,9 +185,8 @@ def update_request(request_id, current_user):
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
-
 # ============================================================================
-# DELETE /api/requests/<request_id> - Удалить заявку
+# DELETE /api/requests/<int:request_id> - Удалить заявку
 # ============================================================================
 
 @requests_bp.route('/<int:request_id>', methods=['DELETE'])
@@ -197,7 +194,6 @@ def update_request(request_id, current_user):
 def delete_request(request_id, current_user):
     """Удалить заявку (только Менеджер)"""
     try:
-        # Только Менеджер может удалять
         if current_user.get('user_type') != 'Менеджер':
             return jsonify({'error': 'Permission denied - only Manager can delete'}), 403
 

@@ -328,3 +328,18 @@ body{
   background: rgba(18,26,51,.92);
   box-shadow: var(--shadow);
 }
+/* Fix: заголовок "Заявка" в модалке */
+.modal__title {
+  color: var(--text);
+}
+
+/* Fix: автозаполнение Chrome делает поля белыми */
+input.input:-webkit-autofill,
+input.input:-webkit-autofill:hover,
+input.input:-webkit-autofill:focus,
+textarea.textarea:-webkit-autofill,
+select.select:-webkit-autofill {
+  -webkit-text-fill-color: var(--text) !important;
+  transition: background-color 9999s ease-out 0s;
+  box-shadow: 0 0 0px 1000px rgba(7,10,20,.55) inset !important;
+}

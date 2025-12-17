@@ -1,84 +1,240 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Учет заявок на ремонт</title>
-  <link rel="stylesheet" href="./css/styles.css" />
+  <meta charset="utf-8" />
+  <title>Реестр заявок на ремонт</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="container topbar__inner">
       <div class="brand">
-        <div class="brand__title">Учет заявок на ремонт</div>
-        <div class="brand__subtitle" id="appSubtitle">Климатическое оборудование</div>
+        <div class="brand__title">Ремонт климатического оборудования</div>
+        <div class="brand__subtitle">Учёт заявок, контроль сроков и качества обслуживания</div>
       </div>
 
-      <div class="userbar" id="userbar" hidden>
+      <div id="userbar" class="userbar" hidden>
         <div class="userbar__meta">
-          <div class="userbar__name" id="userName"></div>
-          <div class="userbar__role" id="userRole"></div>
+          <div id="userName" class="userbar__name"></div>
+          <div id="userRole" class="userbar__role"></div>
         </div>
-        <button class="btn btn--ghost" id="btnLogout" type="button">Выйти</button>
+        <button id="logoutBtn" class="btn btn--ghost" type="button">Выйти</button>
       </div>
     </div>
   </header>
 
-  <main class="container page">
-    <!-- Login -->
-    <section class="card" id="loginView">
-      <h1 class="h1">Вход</h1>
-      <p class="muted">
-        Для демонстрации можно использовать пользователей: operator/operator, specialist/specialist, manager/manager, admin/admin.
-      </p>
+  <main class="page">
+    <div class="container">
 
-      <form class="grid grid--2" id="loginForm">
-        <label class="field">
-          <span class="field__label">Логин</span>
-          <input class="input" name="username" autocomplete="username" required />
-        </label>
+      <!-- LOGIN -->
+      <section id="loginView" class="card">
+        <h1 class="h1">Вход</h1>
+        <p class="muted">
+          Вход выполняется через БД (JWT). (Демо-пары можешь убрать из текста.)
+        </p>
 
-        <label class="field">
-          <span class="field__label">Пароль</span>
-          <input class="input" name="password" type="password" autocomplete="current-password" required />
-        </label>
-
-        <div class="grid__full actions">
-          <button class="btn btn--primary" type="submit">Войти</button>
-        </div>
-      </form>
-
-      <div class="alert alert--info" id="loginHint" hidden></div>
-    </section>
-
-    <!-- App -->
-    <section id="appView" hidden>
-      <nav class="tabs" aria-label="Навигация">
-        <button class="tab is-active" data-tab="requests" type="button">Заявки</button>
-        <button class="tab" data-tab="stats" type="button">Статистика</button>
-        <button class="tab" data-tab="quality" type="button">Качество / QR</button>
-      </nav>
-
-      <!-- Requests -->
-      <section class="card tabpanel" id="tab-requests">
-        <div class="card__head">
-          <h2 class="h2">Список заявок</h2>
-
-          <div class="card__headActions">
-            <button class="btn btn--primary" id="btnNewRequest" type="button">Новая заявка</button>
+        <form id="loginForm" class="split">
+          <div class="grid grid--2">
+            <label class="field">
+              <span class="field__label">Логин</span>
+              <input id="loginUser" class="input" type="text" autocomplete="username" />
+            </label>
+            <label class="field">
+              <span class="field__label">Пароль</span>
+              <input id="loginPass" class="input" type="password" autocomplete="current-password" />
+            </label>
           </div>
+          <div class="actions">
+            <button class="btn btn--primary" type="submit">Войти</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- APP -->
+      <section id="appView" class="card" hidden>
+        <div class="card__head">
+          <div>
+            <h1 class="h1">Реестр заявок</h1>
+            <p class="muted">Учёт обращений клиентов, статус ремонта и анализ качества.</p>
+          </div>
+          <div class="card__headActions">
+            <button id="createRequestBtn" class="btn btn--primary" type="button">Новая заявка</button>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <button class="tab is-active" data-tab="requests" type="button">Заявки</button>
+          <button class="tab" data-tab="stats" type="button">Статистика</button>
+          <button class="tab" data-tab="quality" type="button">Качество</button>
+        </div>
+
+        <!-- TAB: REQUESTS -->
+        <div id="tab-requests">
+          <div class="card card--inner">
+            <div class="grid grid--3">
+              <label class="field">
+                <span class="field__label">Поиск (№, клиент, телефон, модель)</span>
+                <input id="searchInput" class="input" type="text" placeholder="Например, Иванов или 1001" />
+              </label>
+
+              <label class="field">
+                <span class="field__label">Статус</span>
+                <select id="statusFilter" class="select">
+                  <option value="">Все</option>
+                  <option value="open">Открыта</option>
+                  <option value="in_progress">В ремонте</option>
+                  <option value="waiting_parts">Ожидание комплектующих</option>
+                  <option value="done">Завершена</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span class="field__label">Ответственный</span>
+                <!-- Оставляем INPUT, т.к. твой ui.js фильтрует по тексту -->
+                <input id="assigneeFilter" class="input" type="text" placeholder="ФИО или часть" list="assigneeDatalist" />
+                <datalist id="assigneeDatalist"></datalist>
+              </label>
+            </div>
+
+            <div class="tableWrap" style="margin-top:14px;">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>№</th>
+                    <th>Дата</th>
+                    <th>Оборудование</th>
+                    <th>Модель</th>
+                    <th>Клиент</th>
+                    <th>Телефон</th>
+                    <th>Статус</th>
+                    <th>Ответственный</th>
+                    <th class="col-actions">Действия</th>
+                  </tr>
+                </thead>
+                <tbody id="requestsTbody">
+                  <tr>
+                    <td colspan="9"><div class="empty">Нет заявок по заданным условиям.</div></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- TAB: STATS -->
+        <div id="tab-stats" hidden>
+          <div class="card card--inner">
+            <h2 class="h2">Статистика</h2>
+            <p class="muted">Сводные показатели по количеству и срокам выполнения заявок.</p>
+
+            <div class="kpiGrid">
+              <div class="kpi">
+                <div class="kpi__label">Выполнено заявок</div>
+                <div id="statDone" class="kpi__value">0</div>
+              </div>
+              <div class="kpi">
+                <div class="kpi__label">Среднее время выполнения</div>
+                <div id="statAvgDuration" class="kpi__value">—</div>
+              </div>
+              <div class="kpi">
+                <div class="kpi__label">Всего заявок</div>
+                <div id="statTotal" class="kpi__value">0</div>
+              </div>
+            </div>
+
+            <h3 class="h3">Статистика по типам неисправностей</h3>
+            <div class="tableWrap">
+              <table class="table">
+                <thead>
+                  <tr><th>Тип</th><th>Количество</th></tr>
+                </thead>
+                <tbody id="faultStatsTbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: QUALITY -->
+        <div id="tab-quality" hidden>
+          <div class="card card--inner">
+            <h2 class="h2">Качество / QR‑код</h2>
+            <div class="grid grid--2">
+              <div>
+                <h3 class="h3">Оценка качества</h3>
+                <p class="muted">
+                  QR‑код ведёт на форму опроса качества обслуживания.
+                </p>
+                <div class="qrBlock">
+                  <!-- QR генерируется backend’ом -->
+                  <img src="/qr/feedback" alt="QR‑код формы обратной связи" />
+                  <button id="feedbackBtn" class="btn btn--primary" type="button">Открыть форму обратной связи</button>
+                </div>
+              </div>
+              <div>
+                <h3 class="h3">Инструменты менеджера</h3>
+                <p class="muted">
+                  Доступно менеджеру по качеству: привлечение специалистов и продление срока.
+                </p>
+                <div id="managerTools" class="alert alert--info" hidden>
+                  Менеджер по качеству может:
+                  <ul>
+                    <li>просматривать отзывы клиентов;</li>
+                    <li>инициировать доп. диагностику;</li>
+                    <li>согласовывать изменение сроков выполнения заявок.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </div>
+  </main>
+
+  <!-- MODAL: REQUEST -->
+  <dialog id="requestModal" class="modal">
+    <div class="modal__box">
+      <div class="modal__head">
+        <div class="modal__title">Заявка</div>
+        <button id="requestModalCancel" class="iconBtn" type="button">✕</button>
+      </div>
+
+      <form id="requestForm">
+        <input id="reqId" type="hidden" />
+
+        <div class="grid grid--2">
+          <label class="field">
+            <span class="field__label">Оборудование</span>
+            <input id="reqEquipment" class="input" type="text" />
+          </label>
+          <label class="field">
+            <span class="field__label">Модель</span>
+            <input id="reqModel" class="input" type="text" />
+          </label>
+          <label class="field grid__full">
+            <span class="field__label">Неисправность / описание проблемы</span>
+            <textarea id="reqProblem" class="textarea"></textarea>
+          </label>
+        </div>
+
+        <div class="grid grid--2">
+          <label class="field">
+            <span class="field__label">Клиент</span>
+            <input id="reqCustomer" class="input" type="text" />
+          </label>
+          <label class="field">
+            <span class="field__label">Телефон</span>
+            <input id="reqPhone" class="input" type="text" />
+          </label>
         </div>
 
         <div class="grid grid--3">
           <label class="field">
-            <span class="field__label">Поиск</span>
-            <input class="input" id="searchInput" placeholder="Номер / клиент / телефон / модель" />
-          </label>
-
-          <label class="field">
             <span class="field__label">Статус</span>
-            <select class="select" id="statusFilter">
-              <option value="">Все</option>
+            <select id="reqStatus" class="select">
               <option value="open">Открыта</option>
               <option value="in_progress">В ремонте</option>
               <option value="waiting_parts">Ожидание комплектующих</option>
@@ -87,227 +243,64 @@
           </label>
 
           <label class="field">
-            <span class="field__label">Ответственный</span>
-            <input class="input" id="assigneeFilter" placeholder="ФИО специалиста" />
+            <span class="field__label">Ответственный (только из системы)</span>
+            <select id="reqAssignee" class="select">
+              <option value="">Не назначен</option>
+            </select>
           </label>
-        </div>
-
-        <div class="tableWrap">
-          <table class="table" id="requestsTable">
-            <thead>
-              <tr>
-                <th>№</th>
-                <th>Дата</th>
-                <th>Оборудование</th>
-                <th>Модель</th>
-                <th>Клиент</th>
-                <th>Телефон</th>
-                <th>Статус</th>
-                <th>Ответственный</th>
-                <th class="col-actions">Действия</th>
-              </tr>
-            </thead>
-            <tbody id="requestsTbody"></tbody>
-          </table>
-        </div>
-
-        <div class="empty" id="requestsEmpty" hidden>
-          Нет заявок по заданным условиям.
-        </div>
-      </section>
-
-      <!-- Stats -->
-      <section class="card tabpanel" id="tab-stats" hidden>
-        <div class="card__head">
-          <h2 class="h2">Статистика</h2>
-          <button class="btn btn--ghost" id="btnRecalcStats" type="button">Обновить</button>
-        </div>
-
-        <div class="kpiGrid">
-          <div class="kpi">
-            <div class="kpi__label">Выполнено заявок</div>
-            <div class="kpi__value" id="kpiDone">0</div>
-          </div>
-          <div class="kpi">
-            <div class="kpi__label">Среднее время выполнения</div>
-            <div class="kpi__value" id="kpiAvg">—</div>
-          </div>
-          <div class="kpi">
-            <div class="kpi__label">Всего заявок</div>
-            <div class="kpi__value" id="kpiTotal">0</div>
-          </div>
-        </div>
-
-        <h3 class="h3">Статистика по типам неисправностей</h3>
-        <div class="tableWrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Тип</th>
-                <th>Количество</th>
-              </tr>
-            </thead>
-            <tbody id="breakdownTbody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- Quality / QR -->
-      <section class="card tabpanel" id="tab-quality" hidden>
-        <div class="card__head">
-          <h2 class="h2">Качество / QR‑код</h2>
-        </div>
-
-        <div class="grid grid--2">
-          <div class="card card--inner">
-            <h3 class="h3">Оценка качества</h3>
-            <p class="muted">
-              QR‑код ведёт на форму опроса качества обслуживания.
-            </p>
-            <div class="qrBlock">
-              <img id="qrImg" alt="QR код на форму" />
-              <a class="link" id="qrLink" target="_blank" rel="noreferrer">Открыть форму</a>
-            </div>
-          </div>
-
-          <div class="card card--inner" id="managerTools" hidden>
-            <h3 class="h3">Инструменты менеджера</h3>
-
-            <div class="muted">
-              Доступно менеджеру по качеству: привлечение специалистов и продление срока (с согласованием заказчика).
-            </div>
-
-            <form class="grid grid--2" id="managerForm">
-              <label class="field">
-                <span class="field__label">Заявка №</span>
-                <input class="input" name="requestId" placeholder="например 1001" required />
-              </label>
-
-              <label class="field">
-                <span class="field__label">Назначить специалиста</span>
-                <input class="input" name="assignee" placeholder="ФИО" />
-              </label>
-
-              <label class="field grid__full">
-                <span class="field__label">Продлить срок до</span>
-                <input class="input" name="deadline" type="date" />
-              </label>
-
-              <div class="grid__full actions">
-                <button class="btn btn--primary" type="submit">Применить</button>
-              </div>
-            </form>
-
-            <div class="alert alert--info" id="managerHint" hidden></div>
-          </div>
-        </div>
-      </section>
-    </section>
-  </main>
-
-  <!-- Modal: Request -->
-  <dialog class="modal" id="requestModal">
-    <form method="dialog" class="modal__box" id="requestForm">
-      <div class="modal__head">
-        <div class="modal__title" id="requestModalTitle">Заявка</div>
-        <button class="iconBtn" id="btnCloseModal" type="button" aria-label="Закрыть">✕</button>
-      </div>
-
-      <div class="grid grid--2">
-        <label class="field">
-          <span class="field__label">Номер заявки</span>
-          <input class="input" name="id" readonly />
-        </label>
-
-        <label class="field">
-          <span class="field__label">Дата добавления</span>
-          <input class="input" name="created_at" type="datetime-local" required />
-        </label>
-
-        <label class="field">
-          <span class="field__label">Тип оборудования</span>
-          <input class="input" name="equipment_type" placeholder="Кондиционер / вентиляция / ..." required />
-        </label>
-
-        <label class="field">
-          <span class="field__label">Модель</span>
-          <input class="input" name="model" required />
-        </label>
-
-        <label class="field grid__full">
-          <span class="field__label">Описание проблемы</span>
-          <textarea class="textarea" name="problem" rows="3" required></textarea>
-        </label>
-
-        <label class="field">
-          <span class="field__label">ФИО заказчика</span>
-          <input class="input" name="customer_name" required />
-        </label>
-
-        <label class="field">
-          <span class="field__label">Телефон</span>
-          <input class="input" name="phone" placeholder="+7..." required />
-        </label>
-
-        <label class="field">
-          <span class="field__label">Статус</span>
-          <select class="select" name="status" required>
-            <option value="open">Открыта</option>
-            <option value="in_progress">В ремонте</option>
-            <option value="waiting_parts">Ожидание комплектующих</option>
-            <option value="done">Завершена</option>
-          </select>
-        </label>
-
-        <label class="field">
-          <span class="field__label">Ответственный</span>
-          <input class="input" name="assignee" placeholder="ФИО специалиста" />
-        </label>
-
-        <label class="field">
-          <span class="field__label">Срок до</span>
-          <input class="input" name="deadline" type="date" />
-        </label>
-
-        <label class="field">
-          <span class="field__label">Дата завершения</span>
-          <input class="input" name="completed_at" type="datetime-local" />
-        </label>
-
-        <label class="field grid__full">
-          <span class="field__label">Тип неисправности (для статистики)</span>
-          <input class="input" name="fault_type" placeholder="Например: утечка фреона, электрика, шум, ..." />
-        </label>
-      </div>
-
-      <div class="split">
-        <div class="card card--inner">
-          <h3 class="h3">Комментарии</h3>
-          <div class="comments" id="commentsList"></div>
 
           <label class="field">
-            <span class="field__label">Новый комментарий</span>
-            <textarea class="textarea" id="commentText" rows="2" placeholder="Комментарий специалиста / комплектующие / запрос помощи"></textarea>
+            <span class="field__label">Крайний срок</span>
+            <input id="reqDeadline" class="input" type="datetime-local" />
           </label>
-
-          <div class="actions">
-            <button class="btn btn--ghost" id="btnAddComment" type="button">Добавить комментарий</button>
-          </div>
         </div>
+
+        <label class="field">
+          <span class="field__label">Тип неисправности (для статистики)</span>
+          <input id="reqFaultType" class="input" type="text"
+                 placeholder="Например: Плохое охлаждение, Электрика, Шум" />
+        </label>
 
         <div class="modal__actions">
-          <button class="btn btn--danger" id="btnDeleteRequest" type="button">Удалить</button>
+          <div></div>
           <div class="modal__actionsRight">
-            <button class="btn btn--ghost" id="btnCancel" type="button">Назад</button>
-            <button class="btn btn--primary" id="btnSaveRequest" type="submit">Сохранить</button>
+            <button type="button" id="requestModalCancelBottom" class="btn btn--ghost">Отмена</button>
+            <button type="submit" class="btn btn--primary">Сохранить</button>
           </div>
         </div>
-      </div>
-    </form>
+      </form>
+    </div>
   </dialog>
 
-  <div class="toast" id="toast" hidden></div>
+  <!-- MODAL: COMMENTS -->
+  <dialog id="commentsModal" class="modal">
+    <div class="modal__box">
+      <div class="modal__head">
+        <div class="modal__title">Комментарии к заявке</div>
+        <button id="commentsModalClose" class="iconBtn" type="button">✕</button>
+      </div>
 
-  <script src="./js/app.js"></script>
+      <div id="commentsList" class="comments"></div>
+
+      <form id="commentsForm">
+        <label class="field">
+          <span class="field__label">Новый комментарий</span>
+          <textarea id="commentText" class="textarea" rows="3"></textarea>
+        </label>
+        <div class="modal__actions">
+          <div></div>
+          <div class="modal__actionsRight">
+            <button type="submit" class="btn btn--primary">Добавить комментарий</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>

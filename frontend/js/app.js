@@ -1,765 +1,506 @@
-/* Minimal single-file app: in-memory + localStorage.
-   Optional API integration: set API_BASE to your backend if needed. */
-
-const API_BASE = ""; // пример: "http://127.0.0.1:5000/api"
-
-const FEEDBACK_FORM_URL =
-  "https://docs.google.com/forms/d/e/1FAIpQLSdhZcExx6LSIXxk0ub55mSu-WIh23WYdGG9HY5EZhLDo7P8eA/viewform?usp=sf_link";
-
-const LS_KEYS = {
-  requests: "rr_requests_v1",
-  auth: "rr_auth_v1"
-};
-
-const ROLES = {
-  admin: "Администратор",
-  operator: "Оператор",
-  specialist: "Специалист",
-  manager: "Менеджер по качеству"
-};
-
-const STATUS = {
-  open: "Открыта",
-  in_progress: "В ремонте",
-  waiting_parts: "Ожидание комплектующих",
-  done: "Завершена"
-};
-
-const STATUS_BADGE = {
-  open: "badge--info",
-  in_progress: "badge--warn",
-  waiting_parts: "badge--warn",
-  done: "badge--ok"
-};
-
-const demoUsers = [
-  { username: "admin", password: "admin", name: "Администратор", role: "admin" },
-  { username: "operator", password: "operator", name: "Оператор", role: "operator" },
-  { username: "specialist", password: "specialist", name: "Специалист", role: "specialist" },
-  { username: "manager", password: "manager", name: "Менеджер", role: "manager" }
-];
+// app.js — состояние приложения и обработчики
+// Использует функции из ui.js и api.js
 
 const state = {
-  user: null,
+  user: loadAuthFromStorage() || null,
   requests: [],
   activeTab: "requests",
-  selectedRequestId: null
+  selectedRequestId: null,
+  specialists: [],
 };
 
-function uuidv4() {
-  if (window.crypto && typeof window.crypto.randomUUID === "function") {
-    return window.crypto.randomUUID();
-  }
-  // fallback UUIDv4 через getRandomValues
-  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => {
-    const r = crypto.getRandomValues(new Uint8Array(1))[0];
-    return (Number(c) ^ (r & (15 >> (Number(c) / 4)))).toString(16);
-  });
-}
+// ======= фильтры =======
 
-
-const $ = (sel) => document.querySelector(sel);
-
-function nowLocalInputValue() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const mm = pad(d.getMonth() + 1);
-  const dd = pad(d.getDate());
-  const hh = pad(d.getHours());
-  const mi = pad(d.getMinutes());
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
-}
-
-function toISOFromLocalInput(v) {
-  if (!v) return null;
-  const dt = new Date(v);
-  return isNaN(dt.getTime()) ? null : dt.toISOString();
-}
-
-function toLocalInputFromISO(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const mm = pad(d.getMonth() + 1);
-  const dd = pad(d.getDate());
-  const hh = pad(d.getHours());
-  const mi = pad(d.getMinutes());
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
-}
-
-function formatDateTime(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "—";
-  return d.toLocaleString("ru-RU");
-}
-
-function showToast(text) {
-  const t = $("#toast");
-  t.textContent = text;
-  t.hidden = false;
-  clearTimeout(showToast._timer);
-  showToast._timer = setTimeout(() => (t.hidden = true), 2600);
-}
-
-function saveRequests() {
-  localStorage.setItem(LS_KEYS.requests, JSON.stringify(state.requests));
-}
-
-function loadRequests() {
-  const raw = localStorage.getItem(LS_KEYS.requests);
-  if (!raw) return [];
-  try {
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveAuth() {
-  localStorage.setItem(LS_KEYS.auth, JSON.stringify({ user: state.user }));
-}
-
-function loadAuth() {
-  const raw = localStorage.getItem(LS_KEYS.auth);
-  if (!raw) return null;
-  try {
-    const obj = JSON.parse(raw);
-    return obj?.user ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function apiFetch(path, options = {}) {
-  if (!API_BASE) throw new Error("API disabled");
-  const url = API_BASE.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    }
-  });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => "");
-    throw new Error(msg || `HTTP ${res.status}`);
-  }
-  return res.json().catch(() => ({}));
-}
-
-function seedIfEmpty() {
-  if (state.requests.length > 0) return;
-  const base = [
-    {
-      id: 1001,
-      created_at: new Date().toISOString(),
-      equipment_type: "Кондиционер",
-      model: "Daikin FTXF",
-      problem: "Не охлаждает, слышен шум",
-      customer_name: "Иванов Иван",
-      phone: "+7 900 000-00-00",
-      status: "open",
-      assignee: "",
-      deadline: "",
-      completed_at: null,
-      fault_type: "Плохое охлаждение",
-      comments: []
-    },
-    {
-      id: 1002,
-      created_at: new Date(Date.now() - 36 * 3600_000).toISOString(),
-      equipment_type: "Вентиляция",
-      model: "Systemair VTR",
-      problem: "Ошибка датчика, периодически отключается",
-      customer_name: "Петров Петр",
-      phone: "+7 901 111-11-11",
-      status: "in_progress",
-      assignee: "Сидоров С.С.",
-      deadline: "",
-      completed_at: null,
-      fault_type: "Электрика",
-      comments: [
-        {
-          id: uuidv4(),
-          author: "Сидоров С.С.",
-          created_at: new Date().toISOString(),
-          text: "Начата диагностика, требуется уточнить номер платы."
-        }
-      ]
-    }
-  ];
-  state.requests = base;
-  saveRequests();
+function resetFilters() {
+  const search = document.querySelector("#searchInput");
+  const status = document.querySelector("#statusFilter");
+  const assignee = document.querySelector("#assigneeFilter");
+  if (search) search.value = "";
+  if (status) status.value = "";
+  if (assignee) assignee.value = "";
 }
 
 function setUser(user) {
   state.user = user;
-  saveAuth();
-  renderAuth();
-  renderAll();
+  saveAuthToStorage(user);
+  resetFilters();
+
+  // Обновляем имя и должность в шапке
+  const nameEl = document.querySelector(".userbar__name");
+  const roleEl = document.querySelector(".userbar__role");
+  if (nameEl) nameEl.textContent = user.full_name || user.name || user.login || "";
+  if (roleEl) roleEl.textContent = user.role_name || user.role || "";
+
+  renderAll(state);
+}
+
+function clearUserbarUI() {
+  // Очищаем имя и должность пользователя в шапке
+  const nameEl = document.querySelector(".userbar__name");
+  const roleEl = document.querySelector(".userbar__role");
+  if (nameEl) nameEl.textContent = "";
+  if (roleEl) roleEl.textContent = "";
+}
+
+function clearDomForLogout() {
+  // Закрываем модали
+  const requestModal = document.querySelector("#requestModal");
+  if (requestModal?.open) requestModal.close();
+  const commentsModal = document.querySelector("#commentsModal");
+  if (commentsModal?.open) commentsModal.close();
+
+  // Таблица заявок
+  const requestsTbody = document.querySelector("#requestsTbody");
+  if (requestsTbody) requestsTbody.innerHTML = "";
+
+  // Комментарии
+  const commentsList = document.querySelector("#commentsList");
+  if (commentsList) commentsList.innerHTML = "";
+  const commentText = document.querySelector("#commentText");
+  if (commentText) commentText.value = "";
+
+  // Селекты
+  const assigneeFilter = document.querySelector("#assigneeFilter");
+  if (assigneeFilter) assigneeFilter.innerHTML = '<option value="">Все</option>';
+  const reqAssignee = document.querySelector("#reqAssignee");
+  if (reqAssignee) reqAssignee.innerHTML = '<option value="">Не назначен</option>';
+
+  // KPI блоки
+  document.querySelectorAll(".kpi__value").forEach((el) => {
+    el.textContent = "0";
+  });
+
+  // Таблица неисправностей
+  const faultTable = document.querySelector("#faultTypesTable tbody");
+  if (faultTable) faultTable.innerHTML = "";
+
+  // Очищаем шапку пользователя
+  clearUserbarUI();
 }
 
 function logout() {
+  // Сначала чистим DOM
+  clearDomForLogout();
+  resetFilters();
+  resetRequestForm();
+
+  // Потом чистим состояние и хранилище
   state.user = null;
-  localStorage.removeItem(LS_KEYS.auth);
-  renderAuth();
+  state.requests = [];
+  state.specialists = [];
+  state.activeTab = "requests";
+  state.selectedRequestId = null;
+  clearAuthStorage();
+
+  renderAll(state);
   showToast("Вы вышли из системы");
 }
 
-function roleTitle(role) {
-  return ROLES[role] || role || "—";
+// ======= работа с backend через api.js =======
+
+async function loginAndInit(login, password) {
+  const user = await apiLogin(login, password); // /api/auth/login
+  setUser(user);
+  await loadSpecialists();
+  await refreshRequests();
 }
 
-function renderAuth() {
-  const loggedIn = !!state.user;
-  $("#loginView").hidden = loggedIn;
-  $("#appView").hidden = !loggedIn;
-  $("#userbar").hidden = !loggedIn;
+async function apiFetchRequestsWrapped() {
+  const resp = await apiFetch("/api/requests/"); // защищённая ручка
+  return resp.data || [];
+}
 
-  if (loggedIn) {
-    $("#userName").textContent = state.user.name;
-    $("#userRole").textContent = roleTitle(state.user.role);
-    $("#managerTools").hidden = state.user.role !== "manager" && state.user.role !== "admin";
+async function apiCreateRequest(payload) {
+  return apiFetch("/api/requests/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+async function apiUpdateRequest(id, payload) {
+  return apiFetch(`/api/requests/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+async function apiFetchSpecialistsWrapped() {
+  const res = await apiFetch("/api/users/specialists", { method: "GET" });
+  return res?.data || res || [];
+}
+
+// ======= загрузка специалистов и заявок =======
+
+function normalizeAssigneeForRequest(req) {
+  const id = req.assignee_id || "";
+  if (!id) {
+    req.assignee = "";
+    return;
+  }
+  const u = state.specialists.find(
+    (x) => String(x.user_id) === String(id) || String(x.id) === String(id)
+  );
+  req.assignee = u ? (u.full_name || u.name || u.login || "") : "";
+}
+
+function fillAssigneeSelect() {
+  const sel = document.querySelector("#reqAssignee");
+  if (!sel) return;
+
+  sel.innerHTML = '<option value="">Не назначен</option>';
+
+  for (const u of state.specialists) {
+    const id = u.user_id ?? u.id;
+    const name = u.full_name ?? u.name ?? u.login ?? String(id);
+
+    const opt = document.createElement("option");
+    opt.value = String(id);
+    opt.textContent = name;
+    sel.appendChild(opt);
   }
 }
 
-function setActiveTab(tab) {
-  state.activeTab = tab;
-  document.querySelectorAll(".tab").forEach((b) => {
-    b.classList.toggle("is-active", b.dataset.tab === tab);
-  });
-  $("#tab-requests").hidden = tab !== "requests";
-  $("#tab-stats").hidden = tab !== "stats";
-  $("#tab-quality").hidden = tab !== "quality";
+async function loadSpecialists() {
+  if (!state.user) return;
+  try {
+    state.specialists = await apiFetchSpecialistsWrapped();
+    fillAssigneeSelect();
+    for (const r of state.requests) normalizeAssigneeForRequest(r);
+    renderAll(state);
+  } catch (e) {
+    console.error(e);
+    showToast("Не удалось загрузить список ответственных");
+  }
 }
 
-function statusBadge(status) {
-  const cls = STATUS_BADGE[status] || "badge--info";
-  const label = STATUS[status] || status;
-  return `<span class="badge ${cls}">${escapeHtml(label)}</span>`;
-}
-
-function escapeHtml(s) {
-  return String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function filteredRequests() {
-  const q = ($("#searchInput").value || "").trim().toLowerCase();
-  const st = $("#statusFilter").value;
-  const ass = ($("#assigneeFilter").value || "").trim().toLowerCase();
-
-  return state.requests.filter((r) => {
-    const matchesQ =
-      !q ||
-      String(r.id).includes(q) ||
-      (r.customer_name || "").toLowerCase().includes(q) ||
-      (r.phone || "").toLowerCase().includes(q) ||
-      (r.model || "").toLowerCase().includes(q);
-
-    const matchesStatus = !st || r.status === st;
-    const matchesAssignee = !ass || (r.assignee || "").toLowerCase().includes(ass);
-
-    return matchesQ && matchesStatus && matchesAssignee;
-  });
-}
-
-function renderRequestsTable() {
-  const tbody = $("#requestsTbody");
-  const rows = filteredRequests()
-    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
-    .map((r) => {
-      return `
-        <tr>
-          <td><span class="badge">${escapeHtml(r.id)}</span></td>
-          <td>${escapeHtml(formatDateTime(r.created_at))}</td>
-          <td>${escapeHtml(r.equipment_type)}</td>
-          <td>${escapeHtml(r.model)}</td>
-          <td>${escapeHtml(r.customer_name)}</td>
-          <td><span class="badge">${escapeHtml(r.phone)}</span></td>
-          <td>${statusBadge(r.status)}</td>
-          <td>${escapeHtml(r.assignee || "—")}</td>
-          <td>
-            <div class="rowActions">
-              <button class="btn btn--ghost" data-action="open" data-id="${r.id}" type="button">Открыть</button>
-              <button class="btn" data-action="status" data-id="${r.id}" type="button">Сменить статус</button>
-            </div>
-          </td>
-        </tr>
-      `;
-    })
-    .join("");
-
-  tbody.innerHTML = rows || "";
-  $("#requestsEmpty").hidden = filteredRequests().length !== 0;
-}
-
-function nextStatus(s) {
-  const order = ["open", "in_progress", "waiting_parts", "done"];
-  const idx = Math.max(0, order.indexOf(s));
-  return order[(idx + 1) % order.length];
-}
-
-function canEditRequest() {
-  const role = state.user?.role;
-  return role === "admin" || role === "operator" || role === "manager";
-}
-
-function canComment() {
-  const role = state.user?.role;
-  return role === "admin" || role === "specialist" || role === "manager";
-}
-
-function openRequestModal(requestId) {
-  const modal = $("#requestModal");
-  const form = $("#requestForm");
-  const isNew = requestId == null;
-
-  let r;
-  if (isNew) {
-    const maxId = state.requests.reduce((m, x) => Math.max(m, Number(x.id) || 0), 1000);
-    r = {
-      id: maxId + 1,
-      created_at: new Date().toISOString(),
-      equipment_type: "",
-      model: "",
-      problem: "",
+async function refreshRequests() {
+  if (!state.user) return;
+  try {
+    const raw = await apiFetchRequestsWrapped();
+    state.requests = raw.map((r) => ({
+      id: r.request_id,
+      created_at: r.start_date,
+      equipment_type: r.climate_tech_type,
+      model: r.climate_tech_model,
+      problem: r.problem_description,
       customer_name: "",
       phone: "",
-      status: "open",
+      status: mapStatusFromBackend(r.request_status),
+      assignee_id: r.master_id ? String(r.master_id) : "",
       assignee: "",
-      deadline: "",
-      completed_at: null,
-      fault_type: "",
-      comments: []
-    };
-  } else {
-    r = state.requests.find((x) => Number(x.id) === Number(requestId));
-    if (!r) {
-      showToast("Заявка не найдена");
-      return;
-    }
+      deadline: null,
+      completed_at: r.completion_date,
+      fault_type: r.repair_parts || "",
+      comments: [],
+    }));
+    for (const r of state.requests) normalizeAssigneeForRequest(r);
+    renderAll(state);
+  } catch (e) {
+    console.error(e);
+    showToast("Не удалось загрузить заявки");
+  }
+}
+
+// ======= маппинг статусов =======
+
+function mapStatusFromBackend(s) {
+  if (s === "Новая заявка") return "open";
+  if (s === "В работе") return "in_progress";
+  if (s === "Ожидание комплектующих") return "waiting_parts";
+  if (s === "Завершена") return "done";
+  return "open";
+}
+
+function mapStatusToBackend(s) {
+  if (s === "open") return "Новая заявка";
+  if (s === "in_progress") return "В работе";
+  if (s === "waiting_parts") return "Ожидание комплектующих";
+  if (s === "done") return "Завершена";
+  return "Новая заявка";
+}
+
+// ======= форма заявки =======
+
+function resetRequestForm() {
+  $("#reqId").value = "";
+  $("#reqEquipment").value = "";
+  $("#reqModel").value = "";
+  $("#reqProblem").value = "";
+  $("#reqCustomer").value = "";
+  $("#reqPhone").value = "";
+  $("#reqStatus").value = "open";
+  $("#reqAssignee").value = "";
+  $("#reqFaultType").value = "";
+  $("#reqDeadline").value = "";
+
+  const commentText = document.querySelector("#commentText");
+  if (commentText) commentText.value = "";
+}
+
+function fillRequestForm(request) {
+  fillAssigneeSelect();
+  $("#reqId").value = request ? request.id : "";
+  $("#reqEquipment").value = request?.equipment_type || "";
+  $("#reqModel").value = request?.model || "";
+  $("#reqProblem").value = request?.problem || "";
+  $("#reqCustomer").value = request?.customer_name || "";
+  $("#reqPhone").value = request?.phone || "";
+  $("#reqStatus").value = request?.status || "open";
+  $("#reqAssignee").value = request?.assignee_id || "";
+  $("#reqFaultType").value = request?.fault_type || "";
+  $("#reqDeadline").value = toLocalInputFromISO(request?.deadline);
+}
+
+async function upsertRequestFromForm() {
+  if (!state.user) {
+    showToast("Сначала войдите в систему");
+    return;
   }
 
-  state.selectedRequestId = r.id;
-  $("#requestModalTitle").textContent = isNew ? "Новая заявка" : `Заявка №${r.id}`;
+  const idRaw = $("#reqId").value.trim();
+  const isNew = !idRaw;
+  const id = isNew ? null : Number(idRaw);
+  const assignee_id = $("#reqAssignee").value || "";
 
-  form.elements.id.value = r.id;
-  form.elements.created_at.value = toLocalInputFromISO(r.created_at) || nowLocalInputValue();
-  form.elements.equipment_type.value = r.equipment_type || "";
-  form.elements.model.value = r.model || "";
-  form.elements.problem.value = r.problem || "";
-  form.elements.customer_name.value = r.customer_name || "";
-  form.elements.phone.value = r.phone || "";
-  form.elements.status.value = r.status || "open";
-  form.elements.assignee.value = r.assignee || "";
-  form.elements.deadline.value = r.deadline || "";
-  form.elements.completed_at.value = toLocalInputFromISO(r.completed_at) || "";
-  form.elements.fault_type.value = r.fault_type || "";
+  const payloadBackend = {
+    climate_tech_type: $("#reqEquipment").value.trim(),
+    climate_tech_model: $("#reqModel").value.trim(),
+    problem_description: $("#reqProblem").value.trim(),
+    request_status: mapStatusToBackend($("#reqStatus").value),
+    client_id: state.user.id,
+    master_id: assignee_id ? Number(assignee_id) : null,
+    completion_date: null,
+    repair_parts: $("#reqFaultType").value.trim() || null,
+  };
+
+  if (!payloadBackend.climate_tech_type || !payloadBackend.climate_tech_model) {
+    showToast("Заполни оборудование и модель");
+    return;
+  }
+
+  try {
+    if (isNew) {
+      await apiCreateRequest(payloadBackend);
+      showToast("Заявка создана");
+    } else {
+      await apiUpdateRequest(id, {
+        request_status: payloadBackend.request_status,
+        master_id: payloadBackend.master_id,
+        repair_parts: payloadBackend.repair_parts,
+        completion_date: payloadBackend.completion_date,
+      });
+      showToast("Заявка обновлена");
+    }
+    await refreshRequests();
+    $("#requestModal").close();
+  } catch (e) {
+    console.error(e);
+    showToast("Ошибка при сохранении заявки");
+  }
+}
+
+function openRequestModal(request) {
+  fillRequestForm(request || null);
+  $("#requestModal").showModal();
+}
+
+// ======= таблица и действия =======
+
+function handleRowAction(e) {
+  const btn = e.target.closest("button[data-action]");
+  if (!btn) return;
+  const tr = e.target.closest("tr[data-id]");
+  if (!tr) return;
+
+  const id = Number(tr.dataset.id);
+  const req = state.requests.find((r) => r.id === id);
+  if (!req) return;
+
+  const action = btn.dataset.action;
+  if (action === "open") {
+    openRequestModal(req);
+  } else if (action === "done") {
+    // ВАЖНО: отправляем completion_date, чтобы статистика могла его рассчитать
+    apiUpdateRequest(id, {
+      request_status: mapStatusToBackend("done"),
+      completion_date: new Date().toISOString(),
+    })
+      .then(() => refreshRequests())
+      .then(() => showToast("Заявка завершена"))
+      .catch((err) => {
+        console.error(err);
+        showToast("Не удалось завершить заявку");
+      });
+  } else if (action === "comment") {
+    state.selectedRequestId = id;
+    openCommentsModal(req);
+  }
+}
+
+// ======= комментарии =======
+
+function renderComments(request) {
+  const wrap = $("#commentsList");
+  if (!request.comments || !request.comments.length) {
+    wrap.innerHTML = '<div class="empty">Нет комментариев.</div>';
+    return;
+  }
+  wrap.innerHTML = request.comments
+    .slice()
+    .sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""))
+    .map(
+      (c) => `
+      <div class="comment">
+        <div class="comment__meta">
+          <span>${escapeHtml(c.author || "Без имени")}</span>
+          <span>${escapeHtml(formatDateTime(c.created_at))}</span>
+        </div>
+        <div class="comment__text">${escapeHtml(c.text || "")}</div>
+      </div>
+    `
+    )
+    .join("");
+}
+
+function openCommentsModal(request) {
+  renderComments(request);
+  $("#commentsModal").showModal();
+}
+
+function addCommentFromForm() {
+  const text = $("#commentText").value.trim();
+  if (!text) return;
+
+  const req = state.requests.find((r) => r.id === state.selectedRequestId);
+  if (!req) return;
+
+  if (!Array.isArray(req.comments)) req.comments = [];
+  req.comments.push({
+    id: uuidv4(),
+    author: state.user?.name || state.user?.login || "Пользователь",
+    created_at: new Date().toISOString(),
+    text,
+  });
 
   $("#commentText").value = "";
-  renderComments(r);
-
-  const editable = canEditRequest();
-  [
-    "created_at", "equipment_type", "model", "problem", "customer_name", "phone",
-    "status", "assignee", "deadline", "completed_at", "fault_type"
-  ].forEach((name) => {
-    form.elements[name].disabled = !editable;
-  });
-
-  $("#btnSaveRequest").disabled = !editable;
-  $("#btnDeleteRequest").disabled = isNew || !editable;
-
-  const commentable = canComment();
-  $("#commentText").disabled = !commentable;
-  $("#btnAddComment").disabled = !commentable;
-
-  modal.showModal();
+  renderComments(req);
+  renderStats(state);
 }
 
-function closeModal() {
-  const modal = $("#requestModal");
-  if (modal.open) modal.close();
-  state.selectedRequestId = null;
-}
+// ======= очистка при загрузке страницы =======
 
-function renderComments(r) {
-  const list = $("#commentsList");
-  const items = (r.comments || [])
-    .slice()
-    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
-    .map((c) => {
-      return `
-        <div class="comment">
-          <div class="comment__meta">
-            <div>${escapeHtml(c.author || "—")}</div>
-            <div>${escapeHtml(formatDateTime(c.created_at))}</div>
-          </div>
-          <div class="comment__text">${escapeHtml(c.text || "")}</div>
-        </div>
-      `;
-    })
-    .join("");
-
-  list.innerHTML = items || `<div class="muted">Комментариев пока нет.</div>`;
-}
-
-/* Переопределяем apiFetch так, чтобы работало и с относительным API (/api/...)
-   и с API_BASE (если вдруг вынесешь бэкенд отдельно). */
-async function apiFetch(path, options = {}) {
-  const base = (API_BASE || "").replace(/\/+$/, "");
-  const url = (base ? base : "") + "/" + String(path).replace(/^\/+/, "");
-
-  const token = state.user?.token;
-  const headers = {
-    "Content-Type": "application/json",
-    ...(options.headers || {})
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const res = await fetch(url, { ...options, headers });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => "");
-    throw new Error(msg || `HTTP ${res.status}`);
+function initializeAppState() {
+  // Если нет пользователя, очищаем ВСЕ данные и UI
+  if (!state.user) {
+    state.requests = [];
+    state.specialists = [];
+    state.activeTab = "requests";
+    state.selectedRequestId = null;
+    resetFilters();
+    resetRequestForm();
+    clearDomForLogout();
   }
-  return res.json().catch(() => ({}));
 }
 
-function mapRoleFromApi(user_type) {
-  // В БД роли у тебя на русском (например "Менеджер по качеству"). [file:28]
-  if (!user_type) return "operator";
-  const t = String(user_type).toLowerCase();
-  if (t.includes("админ")) return "admin";
-  if (t.includes("оператор")) return "operator";
-  if (t.includes("специалист") || t.includes("мастер")) return "specialist";
-  if (t.includes("менеджер")) return "manager";
-  return "operator";
-}
+// ======= инициализация приложения =======
 
-function normalizeRequestFromApi(r) {
-  // Поля API см. в /api/requests/ (data[].request_id/start_date/...) [file:27]
-  return {
-    id: r.request_id,
-    created_at: r.start_date ? new Date(r.start_date).toISOString() : new Date().toISOString(),
-    equipment_type: r.climate_tech_type || "",
-    model: r.climate_tech_model || "",
-    problem: r.problem_description || "",
-    customer_name: r.client_id ? `Клиент #${r.client_id}` : "—",
-    phone: "—",
-    status: (r.request_status || "Новая заявка").toString(),
-    assignee: r.master_id ? `Специалист #${r.master_id}` : "",
-    deadline: "",
-    completed_at: r.completion_date ? new Date(r.completion_date).toISOString() : null,
-    fault_type: "",
-    comments: []
-  };
-}
+function initApp() {
+  // Инициализируем состояние при загрузке
+  initializeAppState();
 
-function renderStats() {
-  const total = state.requests.length;
-  const done = state.requests.filter((r) => String(r.status).toLowerCase().includes("заверш")).length;
-
-  // Среднее время: completion_date - start_date (если есть)
-  const durations = state.requests
-    .filter((r) => r.completed_at && r.created_at)
-    .map((r) => new Date(r.completed_at).getTime() - new Date(r.created_at).getTime())
-    .filter((ms) => Number.isFinite(ms) && ms >= 0);
-
-  const avgMs = durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : null;
-  const avgHuman = avgMs == null ? "—" : `${Math.round(avgMs / 3600_000)} ч`;
-
-  $("#kpiTotal").textContent = String(total);
-  $("#kpiDone").textContent = String(done);
-  $("#kpiAvg").textContent = avgHuman;
-
-  // По типам неисправностей (берём fault_type если есть, иначе "Не указано")
-  const counter = new Map();
-  for (const r of state.requests) {
-    const key = (r.fault_type || "Не указано").trim() || "Не указано";
-    counter.set(key, (counter.get(key) || 0) + 1);
-  }
-
-  const rows = [...counter.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([k, v]) => `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(v)}</td></tr>`)
-    .join("");
-
-  $("#breakdownTbody").innerHTML = rows || `<tr><td colspan="2" class="muted">Нет данных</td></tr>`;
-}
-
-function renderQR() {
-  const qrUrl =
-    "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" +
-    encodeURIComponent(FEEDBACK_FORM_URL);
-
-  $("#qrImg").src = qrUrl;
-  $("#qrLink").href = FEEDBACK_FORM_URL;
-  $("#qrLink").textContent = "Открыть форму";
-}
-
-function renderAll() {
-  renderRequestsTable();
-  renderStats();
-  renderQR();
-}
-
-async function loadRequestsFromApi() {
-  // Твой сервер реально отвечает на GET /api/requests/?page=1&limit=... [file:27]
-  const res = await apiFetch(`/api/requests/?page=1&limit=100`, { method: "GET" });
-  const arr = Array.isArray(res.data) ? res.data : [];
-  state.requests = arr.map(normalizeRequestFromApi);
-}
-
-async function handleLogin(login, password) {
-  // POST /api/auth/login ожидает JSON {login, password} и возвращает access_token и user_type [file:28]
-  const data = await apiFetch(`/api/auth/login`, {
-    method: "POST",
-    body: JSON.stringify({ login, password })
+  // Обработчики вкладок
+  document.querySelectorAll(".tab").forEach((btn) => {
+    btn.addEventListener("click", () => setActiveTab(state, btn.dataset.tab));
   });
 
-  state.user = {
-    name: data.full_name || data.login || login,
-    role: mapRoleFromApi(data.user_type),
-    token: data.access_token,
-    user_id: data.user_id,
-    user_type: data.user_type
-  };
-  saveAuth();
-  renderAuth();
+  // Обработчик событий таблицы заявок
+  $("#requestsTbody").addEventListener("click", handleRowAction);
 
-  await loadRequestsFromApi();
-  renderAll();
-  showToast("Вход выполнен");
-}
+  // Обработчики фильтров
+  $("#searchInput").addEventListener("input", () => renderRequestsTable(state));
+  $("#statusFilter").addEventListener("change", () => renderRequestsTable(state));
+  $("#assigneeFilter").addEventListener("input", () => renderRequestsTable(state));
 
-function wireEvents() {
-  // Tabs
-  document.querySelectorAll(".tab").forEach((b) => {
-    b.addEventListener("click", () => setActiveTab(b.dataset.tab));
-  });
-
-  // Filters
-  ["#searchInput", "#statusFilter", "#assigneeFilter"].forEach((sel) => {
-    $(sel).addEventListener("input", renderRequestsTable);
-    $(sel).addEventListener("change", renderRequestsTable);
-  });
-
-  // Table actions
-  $("#requestsTbody").addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-action]");
-    if (!btn) return;
-    const id = Number(btn.dataset.id);
-    const action = btn.dataset.action;
-
-    if (action === "open") openRequestModal(id);
-    if (action === "status") {
-      // В твоём бэке статусы на русском, поэтому здесь просто циклим по 4 вариантам интерфейса
-      // (можешь потом привязать к реальным строкам из БД). [file:27]
-      const r = state.requests.find((x) => Number(x.id) === id);
-      if (!r) return;
-      const current = String(r.status || "");
-      const variants = ["Новая заявка", "В процессе ремонта", "Ожидание комплектующих", "Завершена"];
-      const idx = Math.max(0, variants.indexOf(current));
-      r.status = variants[(idx + 1) % variants.length];
-      saveRequests();
-      renderRequestsTable();
-      renderStats();
-      showToast("Статус изменён (локально)");
-    }
-  });
-
-  // New request
-  $("#btnNewRequest").addEventListener("click", () => openRequestModal(null));
-
-  // Modal controls
-  $("#btnCloseModal").addEventListener("click", closeModal);
-  $("#btnCancel").addEventListener("click", closeModal);
-
-  // Add comment
-  $("#btnAddComment").addEventListener("click", () => {
-    const id = state.selectedRequestId;
-    const r = state.requests.find((x) => Number(x.id) === Number(id));
-    if (!r) return;
-
-    const text = ($("#commentText").value || "").trim();
-    if (!text) {
-      showToast("Введите текст комментария");
-      return;
-    }
-
-    r.comments = r.comments || [];
-    r.comments.push({
-      id: uuidv4(),
-      author: state.user?.name || "Пользователь",
-      created_at: new Date().toISOString(),
-      text
-    });
-
-    $("#commentText").value = "";
-    saveRequests();
-    renderComments(r);
-    showToast("Комментарий добавлен");
-  });
-
-  // Save request (локально; к API можно подключить позже, когда поправишь PUT route)
-  $("#requestForm").addEventListener("submit", (e) => {
-    e.preventDefault();
-    if (!canEditRequest()) {
-      showToast("Недостаточно прав");
-      return;
-    }
-
-    const form = $("#requestForm");
-    const id = Number(form.elements.id.value);
-    const idx = state.requests.findIndex((x) => Number(x.id) === id);
-
-    const createdISO = toISOFromLocalInput(form.elements.created_at.value);
-    if (!createdISO) {
-      showToast("Некорректная дата");
-      return;
-    }
-
-    const updated = {
-      ...(idx >= 0 ? state.requests[idx] : {}),
-      id,
-      created_at: createdISO,
-      equipment_type: form.elements.equipment_type.value.trim(),
-      model: form.elements.model.value.trim(),
-      problem: form.elements.problem.value.trim(),
-      customer_name: form.elements.customer_name.value.trim(),
-      phone: form.elements.phone.value.trim(),
-      status: form.elements.status.value,
-      assignee: form.elements.assignee.value.trim(),
-      deadline: form.elements.deadline.value,
-      completed_at: toISOFromLocalInput(form.elements.completed_at.value),
-      fault_type: form.elements.fault_type.value.trim(),
-      comments: (idx >= 0 ? state.requests[idx].comments : []) || []
-    };
-
-    // Простая валидация обязательных полей (в духе требований ТЗ). [file:2]
-    if (!updated.equipment_type || !updated.model || !updated.problem || !updated.customer_name || !updated.phone) {
-      showToast("Заполните обязательные поля");
-      return;
-    }
-
-    if (idx >= 0) state.requests[idx] = updated;
-    else state.requests.push(updated);
-
-    saveRequests();
-    renderAll();
-    closeModal();
-    showToast("Сохранено (локально)");
-  });
-
-  // Delete request (локально)
-  $("#btnDeleteRequest").addEventListener("click", () => {
-    if (!canEditRequest()) {
-      showToast("Недостаточно прав");
-      return;
-    }
-    const id = state.selectedRequestId;
-    if (!id) return;
-
-    const ok = confirm(`Удалить заявку №${id}?`);
-    if (!ok) return;
-
-    state.requests = state.requests.filter((x) => Number(x.id) !== Number(id));
-    saveRequests();
-    renderAll();
-    closeModal();
-    showToast("Удалено (локально)");
-  });
-
-  // Stats refresh
-  $("#btnRecalcStats").addEventListener("click", () => {
-    renderStats();
-    showToast("Статистика обновлена");
-  });
-
-  // Manager tools
-  $("#managerForm").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const role = state.user?.role;
-    if (!(role === "manager" || role === "admin")) {
-      showToast("Доступно только менеджеру");
-      return;
-    }
-
-    const f = e.target;
-    const requestId = Number(f.requestId.value);
-    const assignee = (f.assignee.value || "").trim();
-    const deadline = f.deadline.value || "";
-
-    const r = state.requests.find((x) => Number(x.id) === requestId);
-    if (!r) {
-      showToast("Заявка не найдена");
-      return;
-    }
-
-    if (assignee) r.assignee = assignee;
-    if (deadline) r.deadline = deadline;
-
-    r.comments = r.comments || [];
-    r.comments.push({
-      id: uuidv4(),
-      author: state.user?.name || "Менеджер",
-      created_at: new Date().toISOString(),
-      text: `Действие менеджера: ${assignee ? `назначен ответственный: ${assignee}. ` : ""}${deadline ? `срок продлён до: ${deadline}.` : ""}`
-    });
-
-    saveRequests();
-    renderAll();
-    showToast("Применено (локально)");
-  });
-
-  // Auth
-  $("#btnLogout").addEventListener("click", logout);
-
+  // Обработчик формы входа
   $("#loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const fd = new FormData(e.target);
-    const username = String(fd.get("username") || "").trim();
-    const password = String(fd.get("password") || "").trim();
+
+    // Полностью очищаем следы прошлого пользователя перед новым логином
+    clearDomForLogout();
+    resetFilters();
+    resetRequestForm();
+
+    // Чистим состояние
+    state.requests = [];
+    state.specialists = [];
+    state.activeTab = "requests";
+    state.selectedRequestId = null;
+
+    const login = $("#loginUser").value.trim();
+    const password = $("#loginPass").value.trim();
 
     try {
-      await handleLogin(username, password);
+      await loginAndInit(login, password);
     } catch (err) {
-      $("#loginHint").hidden = false;
-      $("#loginHint").textContent = `Ошибка входа: ${err.message || err}`;
-      showToast("Не удалось войти");
+      console.error(err);
+      showToast("Неверный логин или пароль");
     }
   });
-}
 
-document.addEventListener("DOMContentLoaded", async () => {
-  // Сервер у тебя раздаёт фронт из папки frontend как статику, так что /js/app.js грузится напрямую. [file:29]
-  state.user = loadAuth();
-  state.requests = loadRequests();
+  // Обработчик выхода
+  $("#logoutBtn").addEventListener("click", logout);
 
-  renderAuth();
-  setActiveTab("requests");
-  wireEvents();
-  renderQR();
+  // Обработчик создания новой заявки
+  $("#createRequestBtn").addEventListener("click", () => {
+    resetRequestForm();
+    $("#reqStatus").value = "open";
+    $("#requestModal").showModal();
+  });
 
-  // Если уже есть токен — пробуем подтянуть заявки с API, иначе остаёмся на localStorage.
-  if (state.user?.token) {
-    try {
-      await loadRequestsFromApi();
-    } catch {
-      // молча оставляем локальные данные
-    }
+  // Обработчик формы заявки
+  $("#requestForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    upsertRequestFromForm();
+  });
+
+  // Обработчики закрытия модали заявки
+  $("#requestModalCancel").addEventListener("click", () => {
+    $("#requestModal").close();
+  });
+  $("#requestModalCancelBottom").addEventListener("click", () => {
+    $("#requestModal").close();
+  });
+
+  // Обработчик формы комментариев
+  $("#commentsForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    addCommentFromForm();
+  });
+
+  // Обработчик закрытия модали комментариев
+  $("#commentsModalClose").addEventListener("click", () => {
+    $("#commentsModal").close();
+  });
+
+  // Обработчик кнопки обратной связи
+  const feedbackBtn = $("#feedbackBtn");
+  if (feedbackBtn && typeof FEEDBACK_FORM_URL !== "undefined") {
+    feedbackBtn.addEventListener("click", () => {
+      window.open(FEEDBACK_FORM_URL, "_blank");
+    });
   }
 
-  seedIfEmpty();
-  renderAll();
-});
+  // Если пользователь уже авторизован, загружаем данные
+  if (state.user) {
+    loadSpecialists()
+      .then(() => refreshRequests())
+      .catch(console.error);
+  }
+
+  // Установка активной вкладки и первичная отрисовка
+  setActiveTab(state, state.activeTab);
+  renderAll(state);
+}
+
+// Инициализируем приложение после загрузки DOM
+document.addEventListener("DOMContentLoaded", initApp);
