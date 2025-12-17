@@ -1,0 +1,265 @@
+РУКОВОДСТВО СИСТЕМНОГО ПРОГРАММИСТА
+
+Система управления заявками на ремонт климатической техники
+
+Архитектура системы
+Система построена по модульной архитектуре с использованием Blueprint Flask для разделения функциональности. Структура проекта включает:
+
+app.py - точка входа, создание и конфигурация Flask-приложения
+
+database.py - инициализация SQLAlchemy и управление подключением к БД
+
+config.py - конфигурационные параметры приложения
+
+models/ - модели данных (User, RepairRequest)
+
+routes/ - Blueprint'ы для обработки HTTP-запросов (auth, users, requests, statistics)
+
+middleware/ - промежуточные обработчики (auth_middleware)
+
+services/ - бизнес-логика приложения
+
+frontend/ - статические файлы клиентской части
+
+Установка и настройка
+Установка зависимостей:
+
+bash
+pip install -r requirements.txt
+Конфигурация базы данных:
+
+Создайте файл .env в корневой директории проекта:
+
+text
+DATABASE_URI=postgresql://username:password@hostname:port/database_name
+SECRET_KEY=your_secret_key_for_jwt
+Или настройте параметры в config.py:
+
+python
+class Config:
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URI', 'postgresql://localhost/aircond_db')
+    SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key')
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+Инициализация базы данных:
+
+При первом запуске приложения таблицы БД создаются автоматически через db.create_all() в функции init_db(). Убедитесь, что PostgreSQL запущен и доступен.
+
+Запуск приложения
+Режим разработки:
+
+bash
+python app.py
+По умолчанию приложение запускается на 192.168.0.21:5000 с включенным debug-режимом. Для изменения параметров отредактируйте строку:
+
+python
+app.run(host='192.168.0.21', port=5000, debug=True)
+Production-режим:
+
+Используйте WSGI-сервер (Gunicorn, uWSGI):
+
+bash
+gunicorn -w 4 -b 0.0.0.0:5000 "app:create_app()"
+Управление базой данных
+Подключение к БД:
+
+Приложение использует два подхода к работе с БД:
+
+Flask-SQLAlchemy через объект db для операций в Blueprint'ах
+
+Прямые сессии SQLAlchemy через get_db() для сервисного слоя
+
+Создание миграций:
+
+При изменении структуры моделей используйте Flask-Migrate (требуется добавить в requirements.txt):
+
+python
+from flask_migrate import Migrate
+migrate = Migrate(app, db)
+Команды миграции:
+
+bash
+flask db init          # Инициализация миграций
+flask db migrate -m "Description"  # Создание миграции
+flask db upgrade       # Применение миграций
+Резервное копирование:
+
+bash
+pg_dump -U username -d database_name -f backup.sql
+Восстановление:
+
+bash
+psql -U username -d database_name -f backup.sql
+Аутентификация и авторизация
+JWT-токены:
+
+Токены генерируются при успешной аутентификации в routes/auth.py:
+
+python
+import jwt
+token = jwt.encode({'user_id': user.user_id, 'exp': expiration_time}, 
+                   app.config['SECRET_KEY'], algorithm='HS256')
+Middleware для проверки прав:
+
+@require_auth - проверяет наличие валидного JWT-токена
+
+@require_role(['Менеджер', 'Специалист']) - ограничивает доступ по ролям
+
+Декораторы применяются к эндпоинтам:
+
+python
+@requests_bp.route('/', methods=['POST'])
+@require_auth
+def create_request(current_user):
+    # current_user содержит данные из JWT-токена
+Управление пользователями
+Роли и права доступа:
+
+Роль	Права доступа
+Заказчик	Просмотр только собственных заявок, создание новых заявок
+Оператор	Создание заявок для клиентов
+Специалист	Просмотр всех заявок, назначение мастеров, изменение статусов
+Менеджер	Полный доступ, включая удаление заявок и управление пользователями
+Менеджер по качеству	Просмотр всех заявок, обновление статусов и данных заявок
+Хеширование паролей:
+
+Используется Werkzeug для безопасного хранения паролей:
+
+python
+from werkzeug.security import generate_password_hash, check_password_hash
+
+# Хеширование при создании
+hashed = generate_password_hash(password)
+
+# Проверка при входе
+check_password_hash(stored_hash, input_password)
+Работа с заявками
+Жизненный цикл заявки:
+
+Создание - статус "Новая заявка", автоматическое заполнение start_date
+
+Назначение мастера - заполнение поля master_id
+
+Изменение статуса - "В работе", "Завершена"
+
+Завершение - заполнение completion_date и repair_parts
+
+Пагинация:
+
+Для списков заявок и пользователей используется пагинация SQLAlchemy:
+
+python
+page = request.args.get('page', 1, type=int)
+limit = request.args.get('limit', 10, type=int)
+paginated = query.paginate(page=page, per_page=limit)
+Ответ включает данные и метаинформацию о пагинации.
+
+Статистика и отчеты
+Модуль routes/statistics.py предоставляет агрегированные данные:
+
+Завершенные заявки за период с фильтрацией по датам
+
+Среднее время выполнения заявки (от создания до завершения)
+
+Средняя загрузка системы (количество заявок в работе)
+
+Анализ типов проблем для выявления наиболее частых неисправностей
+
+Обработка ошибок
+Стандартные HTTP-коды:
+
+200 OK - успешная операция
+
+201 Created - успешное создание ресурса
+
+400 Bad Request - некорректные данные от клиента
+
+403 Forbidden - недостаточно прав доступа
+
+404 Not Found - ресурс не найден
+
+500 Internal Server Error - ошибка на сервере
+
+Обработка исключений:
+
+Все эндпоинты обернуты в try-except блоки с откатом транзакций БД при ошибках:
+
+python
+try:
+    # операции с БД
+    db.session.commit()
+except Exception as e:
+    db.session.rollback()
+    return jsonify({'error': str(e)}), 500
+CORS и статические файлы
+Настройка CORS:
+
+Flask-CORS включен для всех маршрутов, что позволяет frontend взаимодействовать с API из другого домена:
+
+python
+from flask_cors import CORS
+CORS(app)
+Обслуживание статики:
+
+Frontend-файлы размещаются в директории frontend/. Flask настроен на их обслуживание с fallback на index.html для SPA-маршрутизации:
+
+python
+@app.route('/<path:path>')
+def catch_all(path):
+    if path.startswith('api/'):
+        return {'error': 'Not found'}, 404
+    if os.path.exists(f'frontend/{path}'):
+        return send_from_directory('frontend', path)
+    return send_from_directory('frontend', 'index.html')
+Мониторинг и логирование
+Рекомендации по production:
+
+Отключите debug-режим (debug=False)
+
+Настройте логирование в файл с ротацией
+
+Используйте системы мониторинга (Prometheus, Grafana)
+
+Настройте резервное копирование БД по расписанию
+
+Используйте обратный прокси (Nginx) перед Flask-приложением
+
+Пример конфигурации логирования:
+
+python
+import logging
+from logging.handlers import RotatingFileHandler
+
+handler = RotatingFileHandler('app.log', maxBytes=10000000, backupCount=5)
+handler.setLevel(logging.INFO)
+app.logger.addHandler(handler)
+Типичные задачи администрирования
+Создание администратора системы:
+
+Используйте POST-запрос к /api/auth/register или напрямую через Python:
+
+python
+from models.user import User
+from werkzeug.security import generate_password_hash
+from database import db
+
+admin = User(
+    full_name="Администратор",
+    phone="+7-XXX-XXX-XXXX",
+    login="admin",
+    password=generate_password_hash("secure_password"),
+    user_type="Менеджер"
+)
+db.session.add(admin)
+db.session.commit()
+Очистка старых данных:
+
+Создайте скрипт для архивирования завершенных заявок старше определенной даты:
+
+python
+from datetime import datetime, timedelta
+old_date = datetime.now() - timedelta(days=365)
+old_requests = RepairRequest.query.filter(
+    RepairRequest.completion_date < old_date
+).all()
+# Экспорт в архивную БД или CSV
+Данная документация обеспечивает полное понимание архитектуры системы и процессов администрирования для развертывания и поддержки приложения в production-среде.
